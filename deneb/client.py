@@ -12,7 +12,11 @@ import os
 import urllib.error
 import urllib.request
 
-from . import config
+from . import __version__, config
+
+# The Neo gateway/Cloudflare edge blocks the default "Python-urllib" UA as a bot
+# signature — identify ourselves honestly so requests aren't 403'd at the edge.
+_UA = f"deneb-cli/{__version__}"
 
 
 class DenebError(Exception):
@@ -37,7 +41,8 @@ def _post(pathname: str, payload: dict, timeout: int) -> dict:
         raise DenebError("not signed in — run: deneb auth --token <your-token>")
     req = urllib.request.Request(
         engine + pathname, data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}",
+                 "User-Agent": _UA},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -72,7 +77,8 @@ def agent_step(history: list[dict], timeout: int = 180) -> dict:
 def health(timeout: int = 15) -> dict:
     engine = config.get_engine().rstrip("/")
     try:
-        with urllib.request.urlopen(engine + "/health", timeout=timeout) as r:
+        req = urllib.request.Request(engine + "/health", headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
