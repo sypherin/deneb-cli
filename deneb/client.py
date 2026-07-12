@@ -74,6 +74,11 @@ def agent_step(history: list[dict], timeout: int = 180) -> dict:
     return _post("/agent-step", {"history": history}, timeout)
 
 
+def summarize(text: str, timeout: int = 120) -> str:
+    """Ask the engine to compact a long session into a brief (auto-compaction)."""
+    return _post("/summarize", {"text": text}, timeout).get("summary", "")
+
+
 def health(timeout: int = 15) -> dict:
     engine = config.get_engine().rstrip("/")
     try:

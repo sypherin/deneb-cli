@@ -74,25 +74,63 @@ def _one_shot(question: str, image: str | None = None) -> int:
     return 0
 
 
+_EXIT_WORDS = {"exit", "quit", "q", "bye", "close", "stop"}
+# ~100k tokens of Q&A memory kept on the box; the engine ALSO windows every request,
+# so the model context (256k) can never overflow.
+_SESSION_CHAR_BUDGET = 400_000
+
+
+def _is_exit(q: str) -> bool:
+    return q.strip().lower().lstrip("/:\\").strip() in _EXIT_WORDS
+
+
+def _maybe_compact(session: list[dict]) -> list[dict]:
+    """Auto-compaction (Claude-Code style): when the session nears the context budget,
+    SUMMARISE the older turns into a compact brief and keep the recent ones verbatim —
+    so context is preserved (not forgotten) and the model window never overflows."""
+    if sum(len(h.get("content", "")) for h in session) <= _SESSION_CHAR_BUDGET:
+        return session
+    keep = session[-6:]
+    older = session[:-6]
+    convo = "\n".join(f"{h.get('role')}: {h.get('content', '')}" for h in older)
+    try:
+        summary = client.summarize(convo)
+    except client.DenebError:
+        summary = ""
+    if not summary:  # fall back to keeping the anchor + recent turns
+        return (session[:1] + keep) if session else keep
+    ui.info("(compacted earlier context to stay under the model's window)")
+    return [{"role": "user", "content": "[Earlier session — compacted summary]\n" + summary}] + keep
+
+
 def _interactive() -> int:
     ui.banner()
     if not _require_auth():
         return 2
-    ui.info('describe what\'s wrong, or type "exit".  e.g.  llama-server won\'t start')
+    ui.info('describe what\'s wrong — or type "exit" to quit (Ctrl-C also works). '
+            'e.g.  llama-server won\'t start')
+    session: list[dict] = []  # accumulating Q&A memory (the loop's tool turns are internal)
     while True:
         try:
             q = input("\033[38;5;44mdeneb›\033[0m ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
-        if q in ("exit", "quit", ":q"):
-            break
         if not q:
             continue
+        if _is_exit(q):
+            ui.info("bye.")
+            break
         try:
-            ui.final(loop.run(q, on_event=ui.event))
+            res = loop.run(q, history=session, on_event=ui.event)
         except client.DenebError as e:
             ui.error(str(e))
+            continue
+        ui.final(res)
+        # Remember the question + the final answer for follow-ups (not the tool noise).
+        session.append({"role": "user", "content": q})
+        session.append({"role": "assistant", "content": res.get("answer") or ""})
+        session = _maybe_compact(session)
     return 0
 
 

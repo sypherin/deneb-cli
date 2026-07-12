@@ -19,8 +19,37 @@ and audited.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
+
+# ── Secret hygiene ────────────────────────────────────────────────────────────
+# On a customer's box Deneb must never surface secrets. Two defences: (1) refuse to
+# read the CONTENT of files that are secrets by nature (report existence + a count so
+# a "key present?" check still works), and (2) REDACT any secret-looking token from
+# every tool observation before it leaves this machine (to the model or the screen).
+_SECRET_FILE = re.compile(
+    r"^(keys?\.json|\.env(\..+)?|.*token.*|.*secret.*|.*credential.*|id_rsa.*|.*\.pem"
+    r"|.*\.key|\.netrc|\.npmrc|\.git-credentials|.*\.p12|.*\.pfx)$",
+    re.I,
+)
+_KEYNAME = (r"(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret[_-]?key|client[_-]?secret"
+            r"|secret|token|password|passwd)")
+_REDACTIONS = [
+    (re.compile(r"sk-[A-Za-z0-9_\-]{12,}"), "sk-[REDACTED]"),
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]{12,}"), r"\1[REDACTED]"),
+    # key = value / "key": "value" / key: value — value may be quoted; capture the
+    # separator (incl. any quotes) into group 1 so the redaction reads cleanly.
+    (re.compile(rf"(?i)({_KEYNAME}[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9._\-/+]{{8,}}"), r"\1[REDACTED]"),
+    (re.compile(r"\beyJ[A-Za-z0-9._\-]{20,}"), "[REDACTED-JWT]"),
+    (re.compile(r"\b[A-Fa-f0-9]{40,}\b"), "[REDACTED-HEX]"),
+]
+
+
+def _redact(text: str) -> str:
+    for pat, repl in _REDACTIONS:
+        text = pat.sub(repl, text)
+    return text
 
 # Deny-by-default: only these binaries may run at all.
 _READ_ONLY = {
@@ -128,7 +157,7 @@ def run(cmd: str, timeout: int = 25) -> dict:
     if p.stderr:
         out += ("\n[stderr]\n" + p.stderr)
     out = out.strip() or "(no output)"
-    return {"ok": True, "output": out[:8000], "exit": p.returncode}
+    return {"ok": True, "output": _redact(out[:8000]), "exit": p.returncode}
 
 
 def read_file(path: str, max_bytes: int = 200_000) -> dict:
@@ -139,6 +168,15 @@ def read_file(path: str, max_bytes: int = 200_000) -> dict:
         return {"ok": True, "output": f"(does not exist: {path})"}
     if not os.path.isfile(p):
         return {"ok": True, "output": f"(not a regular file: {path})"}
+    if _SECRET_FILE.match(os.path.basename(p)):
+        # A secrets file — report existence + a count, NEVER the values.
+        try:
+            n = sum(1 for _ in open(p, errors="ignore"))
+        except Exception:  # noqa: BLE001
+            n = "?"
+        return {"ok": True, "output": f"({os.path.basename(p)} exists ({n} lines) — deneb does "
+                "not read secret values. To verify keys it confirms presence + counts entries, "
+                "never the contents.)"}
     try:
         with open(p, "rb") as f:
             data = f.read(max_bytes + 1)
@@ -150,7 +188,7 @@ def read_file(path: str, max_bytes: int = 200_000) -> dict:
     text = data[:max_bytes].decode("utf-8", "replace")
     if len(data) > max_bytes:
         text += "\n(…truncated)"
-    return {"ok": True, "output": text}
+    return {"ok": True, "output": _redact(text)}
 
 
 def list_dir(path: str) -> dict:
