@@ -48,23 +48,51 @@ def _transcript_md(hist: list[dict], final_answer: str) -> str:
     return "\n".join(out)
 
 
-def _step(hist: list[dict], on_event) -> dict:
-    """One engine round-trip; if it's a tool action, execute it locally and record it.
-    Returns the engine result (the caller checks type)."""
+_APPLY = ("fix", "write_file")
+
+
+def _record(hist: list[dict], res: dict, action: str, output: str) -> None:
+    hist.append({"role": "assistant", "content": _action_repr(res)})
+    hist.append({"role": "tool", "name": action, "content": output})
+
+
+def _step(hist: list[dict], on_event, confirm) -> dict:
+    """One engine round-trip. A read action runs silently; an APPLY action (fix/write_file)
+    is GATED — shown to the user and only executed on their confirm (or --auto). Returns the
+    engine result (the caller checks type)."""
     res = client.agent_step(hist)
     if res.get("type") != "action":
         return res
     action = res.get("action", "")
     cmd = res.get("cmd", "") or ""
     path = res.get("path", "") or ""
+    content = res.get("content", "") or ""
+
+    if action in _APPLY or res.get("apply"):
+        if on_event:
+            on_event("propose", {"action": action, "cmd": cmd, "path": path,
+                                 "why": res.get("why", ""), "content": content})
+        approved = bool(confirm and confirm(res))
+        if not approved:
+            if on_event:
+                on_event("skipped", {"action": action})
+            _record(hist, res, action, "[skipped by user — fix NOT applied]")
+            return res
+        obs = tools.execute_write(action, cmd=cmd, path=path, content=content)
+        if on_event:
+            on_event("applied", {"action": action, "ok": obs.get("ok"),
+                                 "output": obs.get("output", "")})
+        _record(hist, res, action, obs.get("output", ""))
+        return res
+
+    # read-only action
     if on_event:
         on_event("action", {"action": action, "cmd": cmd, "path": path,
                             "thought": res.get("thought", "")})
     obs = tools.execute(action, cmd=cmd, path=path)
     if on_event:
         on_event("observation", {"action": action, "output": obs.get("output", "")})
-    hist.append({"role": "assistant", "content": _action_repr(res)})
-    hist.append({"role": "tool", "name": action, "content": obs.get("output", "")})
+    _record(hist, res, action, obs.get("output", ""))
     return res
 
 
@@ -83,15 +111,16 @@ def _maybe_escalate(hist: list[dict], question: str, result: dict, on_event) -> 
         pass
 
 
-def run(question: str, history: list[dict] | None = None, on_event=None) -> dict:
-    """Drive the loop for one question. `on_event(kind, data)` gets 'action' /
-    'observation' events for the UI. Returns the engine's final result dict."""
+def run(question: str, history: list[dict] | None = None, on_event=None, confirm=None) -> dict:
+    """Drive the loop for one question. `on_event(kind, data)` gets action/observation events
+    for the UI. `confirm(res)->bool` gates each APPLY action (fix/write_file) — without it,
+    apply actions are declined (safe default). Returns the engine's final result dict."""
     hist = list(history or [])
     hist.append({"role": "user", "content": question})
 
     result = None
     for _ in range(MAX_STEPS):
-        res = _step(hist, on_event)
+        res = _step(hist, on_event, confirm)
         if res.get("type") != "action":
             result = res  # final (or a malformed-but-final result)
             break
