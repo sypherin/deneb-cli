@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# internal / local-only — never publish
+PLAN.md
+eval/
+*.log
+.deneb_token
