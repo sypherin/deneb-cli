@@ -16,8 +16,11 @@ gets your box to a working private LLM, and nothing else.
 On the box you're setting up (needs internet). **One line:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sypherin/deneb-cli/main/install.sh | sh
+curl -fsSL https://deneb-engine.altronis.sg/install | sh
 ```
+
+(Equivalent: `curl -fsSL https://raw.githubusercontent.com/sypherin/deneb-cli/main/install.sh | sh` —
+same script, served from this repo.)
 
 Or, if you prefer to install it yourself with [pipx](https://pipx.pypa.io):
 
