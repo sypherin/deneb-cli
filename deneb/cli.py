@@ -58,7 +58,23 @@ def cmd_logout(_argv=None) -> int:
     return 0
 
 
-def _one_shot(question: str, image: str | None = None) -> int:
+def _make_confirm(auto: bool):
+    """Gate for APPLY actions (fix/write_file). --auto approves automatically; otherwise ask
+    the user y/N. A non-interactive stdin (piped) declines — deneb never mutates unprompted."""
+    def confirm(_res) -> bool:
+        if auto:
+            ui.info("--auto: applying")
+            return True
+        try:
+            ans = input("\033[38;5;178m  apply this? [y/N] \033[0m").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        return ans in ("y", "yes")
+    return confirm
+
+
+def _one_shot(question: str, image: str | None = None, auto: bool = False) -> int:
     if not _require_auth():
         return 2
     ui.banner()
@@ -66,7 +82,7 @@ def _one_shot(question: str, image: str | None = None) -> int:
         if image:
             res = client.ask(question or "Diagnose the error in this screenshot.", image=image)
         else:
-            res = loop.run(question, on_event=ui.event)
+            res = loop.run(question, on_event=ui.event, confirm=_make_confirm(auto))
     except client.DenebError as e:
         ui.error(str(e))
         return 1
@@ -103,12 +119,15 @@ def _maybe_compact(session: list[dict]) -> list[dict]:
     return [{"role": "user", "content": "[Earlier session — compacted summary]\n" + summary}] + keep
 
 
-def _interactive() -> int:
+def _interactive(auto: bool = False) -> int:
     ui.banner()
     if not _require_auth():
         return 2
     ui.info('describe what\'s wrong — or type "exit" to quit (Ctrl-C also works). '
             'e.g.  llama-server won\'t start')
+    if auto:
+        ui.info("--auto is ON: fixes apply without asking (still never destructive/elevated).")
+    confirm = _make_confirm(auto)
     session: list[dict] = []  # accumulating Q&A memory (the loop's tool turns are internal)
     while True:
         try:
@@ -122,7 +141,7 @@ def _interactive() -> int:
             ui.info("bye.")
             break
         try:
-            res = loop.run(q, history=session, on_event=ui.event)
+            res = loop.run(q, history=session, on_event=ui.event, confirm=confirm)
         except client.DenebError as e:
             ui.error(str(e))
             continue
@@ -141,9 +160,14 @@ usage:
   deneb "<what's wrong>"        one-shot: e.g.  deneb "llama-server won't start"
   deneb check                   scan the box — am I done?
   deneb --image <path> "<q>"    diagnose a screenshot
+  deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
   deneb auth --token <token>    sign in with your Altronis token
   deneb logout                  remove your token
   deneb --version
+
+Deneb can APPLY fixes (edit a config, mkdir, systemctl --user restart) — it shows you each
+one and asks before running it (gate by default). It NEVER runs anything destructive,
+irreversible, or needing sudo — those it hands you to run yourself.
 """
 
 
@@ -165,18 +189,19 @@ def main(argv=None) -> int:
         from . import check  # deterministic, local, no engine round-trip needed
         return check.run()
     image = _flag(argv, "--image")
+    auto = "--auto" in argv
     question_words = []
     i = 0
     while i < len(argv):
         if argv[i] == "--image":
             i += 2
             continue
-        if argv[i].startswith("--image="):
+        if argv[i].startswith("--image=") or argv[i] == "--auto":
             i += 1
             continue
         question_words.append(argv[i])
         i += 1
     q = " ".join(question_words).strip()
     if not q and not image:
-        return _interactive()
-    return _one_shot(q, image=image)
+        return _interactive(auto=auto)
+    return _one_shot(q, image=image, auto=auto)

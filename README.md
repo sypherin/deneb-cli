@@ -88,11 +88,26 @@ Deneb reads it (OCR) and diagnoses.
 
 ---
 
+## Fixing (not just telling you)
+
+Once Deneb has diagnosed the cause, it can **apply the fix itself** — edit a unit's
+`ExecStart`, `mkdir` a missing directory, `systemctl --user daemon-reload` + `restart`,
+symlink a binary into place — then re-verify it worked.
+
+- **Gate by default.** It shows you each change and asks before running it. Pass `--auto`
+  to let it apply fixes without asking (still bounded by the limits below).
+- **Always reversible + unprivileged.** Before editing any file it makes a `.deneb-bak`
+  backup. It only ever runs reversible, non-elevated actions.
+- **Never destructive, irreversible, or privileged.** No `rm`/`mv`/`dd`/`chmod`, no `sudo`,
+  no system-wide `systemctl`, no firewall/port change, no package install. If the real fix
+  needs one of those, Deneb hands you the exact command to run yourself.
+
 ## What it can and can't do
 
-- **Read-only.** It reads your logs, files, and config and runs read-only diagnostics.
-  It never deletes, writes, restarts services, or touches firewall/ports — when a fix
-  needs a mutating command, it hands you the exact command to run yourself.
+- **The client is the boundary.** The read-only diagnostics and the apply allowlist are both
+  enforced here, deny-by-default, `shell=False`, no `sudo` — auditable in [`deneb/tools.py`](deneb/tools.py)
+  and covered by the tests in [`tests/`](tests). Even a tampered server can't make it run
+  something destructive.
 - **Talks only to your own Neo Altronis cloud** (via your token). Your box's details are
   used to diagnose and go nowhere else. No third-party AI.
 - **Stays in scope:** local-LLM setup on AI boxes. Anything else, it declines in one line.

@@ -38,6 +38,27 @@ def event(kind: str, d: dict) -> None:
         msg = ("looping in an Altronis engineer — sent them your full session log"
                if d.get("sent") else "flagging this to an Altronis engineer")
         _p(f"{_C['amber']}  ↑ {msg}.{_C['r']}")
+    elif kind == "propose":
+        action = d.get("action")
+        _p("")
+        if action == "write_file":
+            _p(f"{_C['amber']}  ⚙ proposed edit:{_C['r']} write {d.get('path', '')}")
+            lines = (d.get("content", "") or "").splitlines()
+            for ln in lines[:12]:
+                _p(f"{_C['dim']}      {ln}{_C['r']}")
+            if len(lines) > 12:
+                _p(f"{_C['dim']}      …({len(lines) - 12} more lines){_C['r']}")
+        else:
+            _p(f"{_C['amber']}  ⚙ proposed fix:{_C['r']} {d.get('cmd', '')}")
+        if d.get("why"):
+            _p(f"{_C['dim']}    why: {d['why']}{_C['r']}")
+        _p(f"{_C['dim']}    (reversible — deneb backs up any file it changes){_C['r']}")
+    elif kind == "applied":
+        ok = d.get("ok")
+        mark, col = ("✓", _C["green"]) if ok else ("✗", _C["red"])
+        _p(f"{col}  {mark} applied:{_C['r']} {d.get('output', '')}")
+    elif kind == "skipped":
+        _p(f"{_C['dim']}  ▸ skipped — not applied.{_C['r']}")
     # observations stay quiet by default (the model reasons on them server-side)
 
 
