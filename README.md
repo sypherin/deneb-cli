@@ -79,6 +79,27 @@ exactly where you stand:
 Green across the board = you've reached the working Neo Altronis state. For anything
 failing, ask `deneb "why is <that> failing"` for a deeper look.
 
+### "What should I run, and how do I set it up?"
+
+Two more **keyless, deterministic** commands (no LLM, no token) read your box and advise:
+
+```sh
+deneb profile                          # structured hardware profile (os/cpu/ram/gpu/budget)
+deneb recommend --use coding           # rank the local-model catalog for THIS box + use-case
+deneb setup Qwen3.6-35B-A3B            # print the platform-correct setup steps for a model
+```
+
+`deneb setup <model>` is **tell-only**: it reads your box, resolves the model, and prints
+the ordered, platform-branched steps — stand up the runtime (CUDA / ROCm / Metal / CPU),
+download the GGUF, run `llama-server` — with each step's exact command, a one-line "what it
+does", and inline risk warnings (needs `sudo`, downloads N GB, starts a service). It shows
+you every command and **runs none of them** (the Deneb Rule) — you run them yourself.
+Execution is a later, paid tier; v1 advises only.
+
+> **v1 has four keyless commands:** `check` (am I done?), `profile` (read my box),
+> `recommend` (what should I run?), and `setup` (how do I set it up?). All deterministic,
+> all read-only, all offline — no token required.
+
 ### Paste a screenshot
 
 Stuck on an on-screen error? Paste the screenshot, or:

@@ -160,8 +160,64 @@ def cmd_recommend(argv=None) -> int:
         print(f"\n  {_C['amber']}nothing in the catalog fits this box for "
               f"{use_case} — the row above is the closest (under-spec) option.{_C['z']}")
     print(f"\n  {_C['b']}next:{_C['z']} deneb setup {getattr(top.model, 'name', '?')}"
-          f"   {_C['d']}(setup lands in a later release; this is a pointer, deneb runs "
+          f"   {_C['d']}(prints the platform-correct setup steps for this pick; deneb runs "
           f"nothing here){_C['z']}")
+    return 0
+
+
+def cmd_setup(argv=None) -> int:
+    """`deneb setup <model>` — read this box, resolve the model in the curated catalog, and
+    print the ORDERED, platform-branched tell-only setup steps (runtime -> download -> run):
+    each step's exact command, a plain 'what it does', and every inline risk warning. Local,
+    deterministic, KEYLESS, engine-free: no auth, no LLM, no engine round-trip. It runs
+    NOTHING — the Deneb Rule: Deneb shows every command and the user runs them. An unknown
+    model name yields a helpful `deneb recommend` pointer + exit 2 (never a crash); a degraded
+    platform still prints best-effort generic steps with a caveat (from setup_advisor)."""
+    from . import hardware, setup_advisor  # deterministic, local — no engine round-trip
+    argv = list(argv or [])
+    # the model name is the non-flag positional args after "setup", joined verbatim.
+    name = " ".join(a for a in argv if not a.startswith("-")).strip()
+    if not name:
+        ui.error("usage: deneb setup <model>   (e.g. deneb setup Qwen3.6-35B-A3B)\n"
+                 "       not sure which model? rank this box first:  deneb recommend --use coding")
+        return 2
+
+    model = setup_advisor.resolve_model(name)
+    if model is None:
+        import difflib
+        names = [getattr(m, "name", "") for m in setup_advisor.CATALOG]
+        close = difflib.get_close_matches(name, names, n=1, cutoff=0.4)
+        hint = f" did you mean '{close[0]}'?" if close else ""
+        ui.error(f"unknown model '{name}'.{hint}\n"
+                 f"       deneb advises on its curated catalog only. see what fits this box "
+                 f"+ the exact names:  deneb recommend --use coding")
+        return 2
+
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+    p = hardware.profile_hardware()                 # read-only probe (diagnosis, allowed)
+    steps = setup_advisor.setup_steps(model, p)     # PURE — builds Step structs, runs nothing
+
+    mname = getattr(model, "name", name)
+    ui.banner()
+    print(f"{_C['d']}setup steps for {_C['z']}{_C['b']}{mname}{_C['z']} "
+          f"{_C['d']}on this box (backend {p.primary_backend}, no engine)…{_C['z']}\n")
+    print(f"  {_C['amber']}Deneb shows every command and runs NOTHING (the Deneb Rule) — "
+          f"you run each yourself.{_C['z']}\n")
+
+    for i, s in enumerate(steps, 1):
+        print(f"  {_C['teal']}{_C['b']}{i}. {s.title}{_C['z']}")
+        if getattr(s, "command", ""):
+            print(f"     {_C['g']}$ {s.command}{_C['z']}")
+        if getattr(s, "what", ""):
+            print(f"     {_C['d']}what: {s.what}{_C['z']}")
+        for w in (getattr(s, "warnings", None) or []):
+            print(f"     {_C['amber']}⚠ {w}{_C['z']}")
+        print()
+
+    print(f"  {_C['b']}next:{_C['z']} run these yourself, top to bottom. "
+          f"{_C['d']}Deneb ran none of them (v1 is tell-only); verify each before you run "
+          f"it.{_C['z']}")
     return 0
 
 
@@ -268,6 +324,7 @@ usage:
   deneb check                   scan the box — am I done?
   deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
   deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
+  deneb setup <model>           print the tell-only, platform-branched setup steps (runs nothing)
   deneb --image <path> "<q>"    diagnose a screenshot
   deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
   deneb auth --token <token>    sign in with your Altronis token
@@ -301,6 +358,8 @@ def main(argv=None) -> int:
         return cmd_profile(argv[1:])  # deterministic, local, keyless, no engine round-trip
     if argv and argv[0] == "recommend":
         return cmd_recommend(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
+    if argv and argv[0] == "setup":
+        return cmd_setup(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     image = _flag(argv, "--image")
     auto = "--auto" in argv
     question_words = []
