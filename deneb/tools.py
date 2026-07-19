@@ -59,7 +59,7 @@ _READ_ONLY = {
     "uname", "hostnamectl", "lscpu", "lsblk", "lspci", "lsusb", "ps", "id", "groups",
     "env", "printenv", "which", "whereis", "type", "echo", "pwd", "date", "uptime",
     "ps", "pgrep", "pstree", "nvidia-smi", "rocminfo", "rocm-smi", "ldd", "nproc",
-    "getconf", "ss",
+    "getconf", "ss", "system_profiler",  # macOS read-only hardware/GPU info probe (Apple path)
     "curl", "tree", "sha256sum", "md5sum", "cut", "sort", "uniq", "basename", "dirname",
     "python3", "python", "pip", "pip3", "cmake", "gcc", "g++", "nvcc", "ip", "sysctl",
     "systemd-analyze", "loginctl", "test", "true",
