@@ -24,7 +24,9 @@ full QA gate. No execution, no LLM, deterministic throughout.
   2. NVIDIA/AMD/Apple/CPU paths independent; a missing vendor tool marks "not present", never crashes
   3. Unified-memory boxes reported correctly (not as VRAM)
   4. Pure parsers unit-tested against captured sample tool outputs
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 01-01-PLAN.md — pure data model + per-vendor parsers + unified/usable memory classification, tested against captured fixtures
+  - [ ] 01-02-PLAN.md — live profile_hardware() orchestration + tools allowlist + graceful multi-vendor degradation + `deneb profile` (e2e on this box)
 
 ### Phase 2: Compatibility + Recommendation
 **Goal**: Given a profile + use-case, Deneb deterministically recommends the best model+quant with a plain "why".
@@ -51,7 +53,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 
 | Phase | Plans Complete | Status |
 |-------|----------------|--------|
-| 1. Hardware Profiling | 0/TBD | Not started |
+| 1. Hardware Profiling | 0/2 | Planned |
 | 2. Compatibility + Recommendation | 0/TBD | Not started |
 | 3. Tell-Only Setup + CLI + QA | 0/TBD | Not started |
 
