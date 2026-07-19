@@ -58,6 +58,52 @@ def cmd_logout(_argv=None) -> int:
     return 0
 
 
+def cmd_profile(_argv=None) -> int:
+    """`deneb profile` — read this box and print the structured HardwareProfile. Local,
+    deterministic, KEYLESS, read-only: no auth, no engine/LLM round-trip (like `check`)."""
+    from . import hardware  # deterministic, local — no engine round-trip needed
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+    p = hardware.profile_hardware()
+    ui.banner()
+    print(f"{_C['d']}reading this box (read-only, no engine)…{_C['z']}\n")
+    print(f"  {_C['b']}os{_C['z']}    {p.os or '?'} · {p.arch or '?'} · kernel {p.kernel or '?'}")
+    print(f"  {_C['b']}cpu{_C['z']}   {p.cpu_model or 'unknown'}  ({p.cpu_cores or '?'} cores)")
+    print(f"  {_C['b']}ram{_C['z']}   {str(p.ram_total_mb) + ' MB' if p.ram_total_mb else 'unknown'}")
+    print(f"  {_C['b']}disk{_C['z']}  {str(p.disk_free_mb) + ' MB free' if p.disk_free_mb is not None else 'unknown'}")
+    print()
+    if not p.gpus:
+        print(f"  {_C['amber']}no GPU vendor tool found — CPU-only.{_C['z']}")
+    for g in p.gpus:
+        name = g.name or f"{g.vendor or 'unknown'} GPU"
+        print(f"  {_C['teal']}{_C['b']}▸ {g.vendor or '?'} · {name}{_C['z']}  "
+              f"{_C['d']}[{g.backend or 'cpu'}]{_C['z']}")
+        if g.memory_kind == "unified":
+            print(f"      memory: unified {g.unified_mem_mb} MB (shared system-RAM pool; "
+                  f"usable ~{p.usable_mem_mb} MB)")
+        elif g.memory_kind == "dedicated":
+            print(f"      memory: VRAM {g.vram_mb} MB (dedicated)" if g.vram_mb
+                  else "      memory: dedicated (VRAM size unread)")
+        else:
+            print("      memory: unknown")
+        extra = g.extra or {}
+        tail = " · ".join(x for x in (
+            f"gfx {extra['gfx']}" if extra.get("gfx") else "",
+            f"sku {extra['sku']}" if extra.get("sku") else "",
+            f"driver {g.driver}" if g.driver else "") if x)
+        if tail:
+            print(f"      {_C['d']}{tail}{_C['z']}")
+    print(f"\n  {_C['b']}primary backend:{_C['z']} {p.primary_backend}")
+    if p.usable_mem_mb is not None:
+        print(f"  {_C['b']}usable model budget:{_C['z']} ~{p.usable_mem_mb} MB "
+              f"{_C['d']}(coarse — Phase-2 fit math refines this){_C['z']}")
+    if p.notes:
+        print(f"\n{_C['d']}notes:{_C['z']}")
+        for n in p.notes:
+            print(f"{_C['d']}  · {n}{_C['z']}")
+    return 0
+
+
 def _make_confirm(auto: bool):
     """Gate for APPLY actions (fix/write_file). --auto approves automatically; otherwise ask
     the user y/N. A non-interactive stdin (piped) declines — deneb never mutates unprompted."""
@@ -159,6 +205,7 @@ usage:
   deneb                         start interactive troubleshooting
   deneb "<what's wrong>"        one-shot: e.g.  deneb "llama-server won't start"
   deneb check                   scan the box — am I done?
+  deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
   deneb --image <path> "<q>"    diagnose a screenshot
   deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
   deneb auth --token <token>    sign in with your Altronis token
@@ -188,6 +235,8 @@ def main(argv=None) -> int:
     if argv and argv[0] == "check":
         from . import check  # deterministic, local, no engine round-trip needed
         return check.run()
+    if argv and argv[0] == "profile":
+        return cmd_profile(argv[1:])  # deterministic, local, keyless, no engine round-trip
     image = _flag(argv, "--image")
     auto = "--auto" in argv
     question_words = []
