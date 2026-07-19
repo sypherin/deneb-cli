@@ -104,6 +104,67 @@ def cmd_profile(_argv=None) -> int:
     return 0
 
 
+_RECOMMEND_USE_CASES = ("coding", "vision", "chat", "general")
+
+
+def _fit_cell(fr) -> str:
+    """One-column fit status for the ranked table: a check + headroom in GB when it fits
+    comfortably, 'tight' with the MB spare when it fits but barely, else 'no' with how many
+    MB short. Purely cosmetic — the real fit math lives in deneb.fit."""
+    headroom = int(getattr(fr, "headroom_mb", 0) or 0)
+    if not getattr(fr, "fits", False):
+        need = int(getattr(fr, "need_mb", 0) or 0)
+        short = need - headroom if headroom else need  # headroom is 0 when budget unread
+        return f"no (short ~{max(0, -headroom)} MB)" if headroom < 0 else "no"
+    if headroom < 2000:
+        return f"tight (~{headroom} MB)"
+    return f"✓ ~{int(round(headroom / 1024))} GB free"
+
+
+def cmd_recommend(argv=None) -> int:
+    """`deneb recommend [--use coding|vision|chat|general]` — read this box, rank the model
+    catalog for the use-case, and print a table + a next-step pointer. Local, deterministic,
+    KEYLESS, engine-free: no auth, no LLM, no engine round-trip. It EXECUTES NOTHING (the
+    Deneb Rule) — the 'next: deneb setup <pick>' line is a printed pointer, not an invocation."""
+    from . import hardware, recommend as rec  # deterministic, local — no engine round-trip
+    argv = list(argv or [])
+    use_case = (_flag(argv, "--use") or "general").strip().lower()
+    if use_case not in _RECOMMEND_USE_CASES:
+        ui.error(f"unknown --use '{use_case}'. valid options: "
+                 f"{', '.join(_RECOMMEND_USE_CASES)}")
+        return 2
+
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+    p = hardware.profile_hardware()
+    recs = rec.recommend(p, use_case)
+
+    ui.banner()
+    budget = f"~{p.usable_mem_mb} MB" if p.usable_mem_mb is not None else "unknown"
+    print(f"{_C['d']}ranking local models for {_C['z']}{_C['b']}{use_case}{_C['z']} "
+          f"{_C['d']}on this box (budget {budget} · {p.primary_backend}, no engine)…{_C['z']}\n")
+
+    print(f"  {_C['b']}{'#':<2} {'model':<30} {'quant':<7} "
+          f"{'fit':<18} {'speed':<9}{_C['z']}")
+    for i, r in enumerate(recs, 1):
+        name = (getattr(r.model, 'name', '') or '?')[:30]
+        qname = getattr(r.quant, 'name', '') or '?'
+        tier = getattr(r.fit, 'expected_speed_tier', '') or '?'
+        col = _C['g'] if getattr(r.fit, 'fits', False) else _C['amber']
+        print(f"  {_C['teal']}{i:<2}{_C['z']} {_C['b']}{name:<30}{_C['z']} "
+              f"{qname:<7} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9}")
+        print(f"     {_C['d']}why: {r.why}{_C['z']}")
+
+    top = recs[0]
+    if not getattr(top.fit, "fits", False):
+        print(f"\n  {_C['amber']}nothing in the catalog fits this box for "
+              f"{use_case} — the row above is the closest (under-spec) option.{_C['z']}")
+    print(f"\n  {_C['b']}next:{_C['z']} deneb setup {getattr(top.model, 'name', '?')}"
+          f"   {_C['d']}(setup lands in a later release; this is a pointer, deneb runs "
+          f"nothing here){_C['z']}")
+    return 0
+
+
 def _make_confirm(auto: bool):
     """Gate for APPLY actions (fix/write_file). --auto approves automatically; otherwise ask
     the user y/N. A non-interactive stdin (piped) declines — deneb never mutates unprompted."""
@@ -206,6 +267,7 @@ usage:
   deneb "<what's wrong>"        one-shot: e.g.  deneb "llama-server won't start"
   deneb check                   scan the box — am I done?
   deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
+  deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
   deneb --image <path> "<q>"    diagnose a screenshot
   deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
   deneb auth --token <token>    sign in with your Altronis token
@@ -237,6 +299,8 @@ def main(argv=None) -> int:
         return check.run()
     if argv and argv[0] == "profile":
         return cmd_profile(argv[1:])  # deterministic, local, keyless, no engine round-trip
+    if argv and argv[0] == "recommend":
+        return cmd_recommend(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     image = _flag(argv, "--image")
     auto = "--auto" in argv
     question_words = []
