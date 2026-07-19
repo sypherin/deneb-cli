@@ -173,3 +173,188 @@ def resolve_model(name) -> "Model | None":
         return None
     except Exception:  # noqa: BLE001 — a lookup must never crash the caller
         return None
+
+
+# ── SET-03 warning text (one place each; stamped inline by setup_steps) ────────
+_SUDO_WARNING = "needs sudo - installs system packages / drivers with root privilege."
+_BUILD_WARNING = ("compiles llama.cpp from source - can take several minutes and needs the "
+                  "build prerequisites above.")
+_SERVICE_WARNING = ("starts a local server on 127.0.0.1:8001 - it stays running until you "
+                    "stop it (Ctrl-C).")
+_UNDERSPEC_WARNING = ("may exceed your box's memory budget - expect a tight fit or OOM; "
+                      "consider a smaller model or CPU offload.")
+
+# AMD GFX versions that carry the gfx1151/Strix ROCm-kernel caveat (mirrors fit.py).
+_CAVEAT_GFX = {"gfx1151", "gfx1150"}
+
+
+# ── small pure helpers for setup_steps ─────────────────────────────────────────
+def _repo_basename(repo) -> str:
+    """The last path segment of an HF repo id -> the local-dir name (e.g.
+    'Qwen/Qwen3-30B-A3B-GGUF' -> 'Qwen3-30B-A3B-GGUF'). 'model' when empty."""
+    r = str(repo or "").strip().rstrip("/")
+    return r.split("/")[-1] if r else "model"
+
+
+def _size_gb(size_mb) -> int:
+    """quant.size_mb -> whole GB (round(size_mb/1024)); 0 when unreadable."""
+    try:
+        return int(round(int(size_mb) / 1024))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_vision(model) -> bool:
+    """True when the model is a vision model (a 'vision' capability, or its notes mention the
+    mmproj projector). Vision models need the mmproj GGUF alongside the weights."""
+    try:
+        if "vision" in (getattr(model, "capabilities", None) or []):
+            return True
+        return "mmproj" in (getattr(model, "notes", "") or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _has_caveat_gfx(profile) -> bool:
+    """True when ANY GPU reports a gfx1151/gfx1150 (the Strix Halo ROCm-kernel caveat)."""
+    try:
+        for g in (getattr(profile, "gpus", None) or []):
+            extra = getattr(g, "extra", None)
+            if isinstance(extra, dict) and str(extra.get("gfx", "")).lower() in _CAVEAT_GFX:
+                return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+def _advised_quant(model, profile, quant):
+    """The advised quant: the caller's explicit `quant`, else the HIGHEST-bpw quant that
+    fits() this box (same rule recommend uses). If NONE fit, the LOWEST-bpw quant with an
+    under-spec flag. Returns (quant | None, under_spec: bool). Never raises."""
+    quants = list(getattr(model, "quants", None) or [])
+    if quant is not None:
+        return quant, False
+    if not quants:
+        return None, True
+    best = None  # (bpw, quant)
+    for q in quants:
+        try:
+            if fits(model, q, profile).fits:
+                bpw = float(getattr(q, "bpw", 0) or 0)
+                if best is None or bpw > best[0]:
+                    best = (bpw, q)
+        except Exception:  # noqa: BLE001
+            continue
+    if best is not None:
+        return best[1], False
+    low = min(quants, key=lambda q: float(getattr(q, "bpw", 0) or 0))
+    return low, True
+
+
+def _runtime_steps(pb: "Playbook") -> list:
+    """Build the ordered runtime Steps from a Playbook branch, stamping the SET-03 sudo
+    warning on any sudo/system-install step and a compile note on any build step."""
+    steps = []
+    for rs in pb.runtime:
+        warnings = []
+        if rs.needs_sudo or "sudo" in rs.command:
+            warnings.append(_SUDO_WARNING)
+        if rs.is_build:
+            warnings.append(_BUILD_WARNING)
+        steps.append(Step(title=rs.title, command=rs.command, what=_plain(rs.what),
+                          warnings=[_plain(w) for w in warnings], kind="runtime"))
+    return steps
+
+
+def _run_step(pb: "Playbook", profile, basename: str, qname: str,
+              vision: bool, under_spec: bool) -> Step:
+    """The llama-server RUN step: platform-branched flags, mmproj on vision, always bound to
+    127.0.0.1 (never 0.0.0.0 - exposure is out of scope for v1). SET-03 service warning +
+    the gfx1151 Strix caveat on rocm + the under-spec warning when it applies."""
+    parts = ["llama-server", "-m", f"~/models/{basename}/*{qname}*.gguf"]
+    if vision:
+        parts += ["--mmproj", f"~/models/{basename}/mmproj-*.gguf"]
+    if pb.run_flags:
+        parts.append(pb.run_flags)
+    parts += ["--host", "127.0.0.1", "--port", "8001"]
+    warnings = [_plain(_SERVICE_WARNING)]
+    if pb.run_warning and _has_caveat_gfx(profile):
+        warnings.append(_plain(pb.run_warning))
+    if under_spec:
+        warnings.append(_plain(_UNDERSPEC_WARNING))
+    return Step(title="Run the model (llama-server)", command=" ".join(parts),
+                what=_plain("starts the model server locally"), warnings=warnings, kind="run")
+
+
+# ── the public entry point (SET-01, SET-02, SET-03; PURE, never raises) ────────
+def setup_steps(model, profile, quant=None) -> list:
+    """The ORDERED tell-only setup advice for `model` on `profile`: runtime(s) -> download ->
+    run, platform-branched from the PLAYBOOK, every sudo/download/service step warned inline.
+
+    Backend resolves from profile.primary_backend; an unknown/empty backend degrades to the
+    generic 'cpu' branch plus an honest NOTE (PLAT-03). The advised quant is the highest-bpw
+    quant that fits (else the lowest, with an under-spec warning). Vision models get an extra
+    mmproj projector note. PURE - builds and returns Step structs, executes NOTHING. The whole
+    body is guarded so any malformed input degrades to a single honest note, never raises."""
+    try:
+        backend = (getattr(profile, "primary_backend", "") or "").strip().lower()
+        degraded = backend not in PLAYBOOK
+        if degraded:
+            backend = "cpu"
+        pb = PLAYBOOK[backend]
+
+        steps: list = []
+        if degraded:
+            steps.append(Step(
+                title="Platform not confidently detected",
+                command="",
+                what=_plain("could not read your platform confidently - showing generic "
+                            "CPU-safe steps; verify the accelerator flags for your box."),
+                warnings=[], kind="note"))
+
+        chosen, under_spec = _advised_quant(model, profile, quant)
+        qname = getattr(chosen, "name", "") or ""
+        size_mb = getattr(chosen, "size_mb", 0) or 0
+        repo = getattr(model, "gguf_repo", "") or ""
+        basename = _repo_basename(repo)
+        vision = _is_vision(model)
+
+        # (1) RUNTIME — stand up llama.cpp for this accelerator.
+        steps += _runtime_steps(pb)
+
+        # (2) DOWNLOAD — the chosen GGUF, warning naming the size in GB (SET-03).
+        dl_warnings = [_plain(f"downloads ~{_size_gb(size_mb)} GB to ~/models/{basename} - "
+                              "check you have the disk space.")]
+        if under_spec:
+            dl_warnings.append(_plain(_UNDERSPEC_WARNING))
+        steps.append(Step(
+            title=f"Download the {qname} GGUF" if qname else "Download the GGUF weights",
+            command=f'hf download {repo} --include "*{qname}*.gguf" '
+                    f"--local-dir ~/models/{basename}",
+            what=_plain(f"downloads the {qname} GGUF weights"),
+            warnings=dl_warnings, kind="download"))
+
+        # (2b) VISION — the mmproj projector alongside the weights (an extra note, not a 2nd
+        #      download, so the pipeline stays runtime -> one download -> one run).
+        if vision:
+            steps.append(Step(
+                title="Download the vision projector (mmproj)",
+                command=f'hf download {repo} --include "*mmproj*.gguf" '
+                        f"--local-dir ~/models/{basename}",
+                what=_plain("downloads the mmproj projector GGUF - vision models need it "
+                            "alongside the weights to process images"),
+                warnings=[_plain("downloads an extra projector file (usually a few "
+                                 "hundred MB).")],
+                kind="note"))
+
+        # (3) RUN — llama-server with platform flags, bound to 127.0.0.1 (SET-03 service).
+        steps.append(_run_step(pb, profile, basename, qname, vision, under_spec))
+
+        return steps
+    except Exception:  # noqa: BLE001 — the advisory must degrade, never crash the caller (PLAT-03)
+        return [Step(
+            title="Could not build setup steps",
+            command="",
+            what=_plain("could not build setup steps for this model/box - verify the model "
+                        "name and re-run; the Deneb Rule means nothing was executed."),
+            warnings=[], kind="note")]
