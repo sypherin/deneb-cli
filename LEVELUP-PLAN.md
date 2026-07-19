@@ -210,10 +210,12 @@ general LLM STRUCTURALLY cannot match:
    or any model the user picks? Opinionated = simpler + on-brand; flexible = broader + harder.
 4. **Monetization.** How the paid tier charges: one-off setup fee / subscription / bundled into the
    consulting retainer / per-box license. Shapes the whole key + tier system.
-5. **Minimum v1 (recommended to decide FIRST).** Full 6 phases + gaps = multi-month; risks never
-   shipping (anti-over-build rule). Proposed lean v1: "what should I run on my box" recommendation +
-   diagnose + TELL-only guided setup, keyless/free — ship, validate the funnel/reach-outs, THEN
-   build execution (the big risky part). Validate demand before pouring months in.
+5. **Minimum v1 — RESOLVED (Zach 2026-07-19: "confirm, go ahead build v1").** v1 = the lean,
+   hardware-GENERAL, deterministic, keyless FREE tier: (a) hardware profiling across platforms,
+   (b) "what should I run on my box" recommendation (compat-matrix + fit math), (c) TELL-only
+   guided setup (advises steps, never executes — the Deneb Rule; execution deferred to the paid
+   executor phases). NO LLM in the core (deterministic-first). Ships to validate the funnel/
+   reach-outs before building the risky executor. BUILDING NOW via GSD.
 6. **Liability / support posture.** Deneb runs `sudo` on a user's prod box. Even consent-first +
    warnings, if it breaks something — disclaimer + support stance, esp for paid clients?
 7. **Model licensing** — Gemma/Qwen/Surya licenses when Deneb auto-downloads + sets them up

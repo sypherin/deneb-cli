@@ -1,0 +1,10 @@
+{
+  "mode": "yolo",
+  "granularity": "standard",
+  "commit_docs": true,
+  "research": false,
+  "auto": true,
+  "runtime": "claude",
+  "created": "2026-07-19",
+  "workflow": { "use_worktrees": false }
+}
