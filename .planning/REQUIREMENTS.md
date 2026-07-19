@@ -19,12 +19,12 @@
 
 ### Compatibility + Fit (FIT)
 
-- [ ] **FIT-01**: A curated model catalog (data file): models × available quants × approx file-size/
+- [x] **FIT-01**: A curated model catalog (data file): models × available quants × approx file-size/
       VRAM-need × capability tags (coding/vision/chat/general) × GGUF source.
-- [ ] **FIT-02**: `fits(model, quant, profile)` pure function: does it fit the usable memory (with a
+- [x] **FIT-02**: `fits(model, quant, profile)` pure function: does it fit the usable memory (with a
       safety margin), returns {fits: bool, headroom_mb, expected_speed_tier, caveats[]}. Unit-tested
       with a canonical case set (e.g. a 7B-Q4 fits 16GB; a 70B-Q4 does not).
-- [ ] **FIT-02b**: Known-caveat rules apply (e.g. gfx1151 kernel note on Strix, unified-mem headroom).
+- [x] **FIT-02b**: Known-caveat rules apply (e.g. gfx1151 kernel note on Strix, unified-mem headroom).
 
 ### Recommendation (REC)
 

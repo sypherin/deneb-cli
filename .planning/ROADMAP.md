@@ -38,7 +38,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
   3. `deneb recommend --use coding` on this box returns a sane ranked recommendation with why-strings
   4. "nothing fits" handled honestly
 **Plans**: 2 plans
-  - [ ] 02-01-PLAN.md — curated model catalog (FIT-01) + pure `fits()` fit-math, speed-tier heuristic, and known-caveat rules (FIT-02, FIT-02b), TDD
+  - [x] 02-01-PLAN.md — curated model catalog (FIT-01) + pure `fits()` fit-math, speed-tier heuristic, and known-caveat rules (FIT-02, FIT-02b), TDD
   - [ ] 02-02-PLAN.md — pure deterministic `recommend()` ranking + why-strings + nothing-fits (REC-01, REC-03) + `deneb recommend --use` CLI live on this box (REC-02)
 
 ### Phase 3: Tell-Only Setup + CLI + QA
@@ -56,7 +56,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 | Phase | Plans Complete | Status |
 |-------|----------------|--------|
 | 1. Hardware Profiling | 2/2 | Complete |
-| 2. Compatibility + Recommendation | 0/2 | Planned |
+| 2. Compatibility + Recommendation | 1/2 | In Progress |
 | 3. Tell-Only Setup + CLI + QA | 0/TBD | Not started |
 
 ## Coverage
