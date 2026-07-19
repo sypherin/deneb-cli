@@ -11,7 +11,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 
 - [x] **Phase 1: Hardware Profiling** — read any common box (NVIDIA/AMD/Apple/CPU), structured profile, graceful degradation, tested parsers (completed 2026-07-19)
 - [x] **Phase 2: Compatibility + Recommendation** — curated model catalog, fit math, `deneb recommend --use` with ranked why (completed 2026-07-19)
-- [ ] **Phase 3: Tell-Only Setup + CLI + QA** — `deneb setup <model>` advisory (tell-only, risk-flagged), keyless wiring, full QA gate
+- [x] **Phase 3: Tell-Only Setup + CLI + QA** — `deneb setup <model>` advisory (tell-only, risk-flagged), keyless wiring, full QA gate (completed 2026-07-19)
 
 ## Phase Details
 
@@ -52,7 +52,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
   4. Full pytest green + `deneb recommend`/`setup` verified live on this box + Zach's phone/box final gate
 **Plans**: 2 plans
   - [x] 03-01-PLAN.md — pure tell-only setup advisory core: Step model + curated platform-branched PLAYBOOK + `setup_steps()` step-gen with inline sudo/download/service warnings (SET-01, SET-02, SET-03, QA-01), TDD
-  - [ ] 03-02-PLAN.md — `deneb setup <model>` CLI wiring (keyless, print-only) + help/README + the QA-03 Deneb-Rule no-execution assertion + full-suite green + live e2e on this box (PLAT-01/02/03, QA-02, QA-03, QA-04)
+  - [x] 03-02-PLAN.md — `deneb setup <model>` CLI wiring (keyless, print-only) + help/README + the QA-03 Deneb-Rule no-execution assertion + full-suite green + live e2e on this box (PLAT-01/02/03, QA-02, QA-03, QA-04)
 
 ## Progress
 
@@ -60,7 +60,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 |-------|----------------|--------|
 | 1. Hardware Profiling | 2/2 | Complete |
 | 2. Compatibility + Recommendation | 2/2 | Complete |
-| 3. Tell-Only Setup + CLI + QA | 1/2 | In Progress |
+| 3. Tell-Only Setup + CLI + QA | 2/2 | Complete |
 
 ## Coverage
 

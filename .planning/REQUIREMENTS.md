@@ -48,21 +48,21 @@
 
 ### Platform / CLI (PLAT)
 
-- [ ] **PLAT-01**: All v1 commands are keyless (free tier) and deterministic — no engine round-trip,
+- [x] **PLAT-01**: All v1 commands are keyless (free tier) and deterministic — no engine round-trip,
       no LLM, works offline. `deneb check` stays as-is; add `recommend` + `setup` (tell-only).
-- [ ] **PLAT-02**: Reuse the existing `tools` allowlist for read-only probes; no new heavy deps.
-- [ ] **PLAT-03**: Graceful, honest degradation everywhere (missing tool, unknown GPU, nothing fits) —
+- [x] **PLAT-02**: Reuse the existing `tools` allowlist for read-only probes; no new heavy deps.
+- [x] **PLAT-03**: Graceful, honest degradation everywhere (missing tool, unknown GPU, nothing fits) —
       never crash, never guess a hardware fact it can't read.
 
 ### Quality (QA)
 
 - [x] **QA-01**: pytest on all pure logic: profile parsers (HW-04), fit math (FIT-02), recommend
       ranking (REC-03), setup step generation (SET-02).
-- [ ] **QA-02**: E2E smoke: `deneb recommend` runs on THIS real box (Strix Halo, rocm-smi) and returns
+- [x] **QA-02**: E2E smoke: `deneb recommend` runs on THIS real box (Strix Halo, rocm-smi) and returns
       a sane recommendation; `deneb setup <pick>` prints tell-only steps with warnings.
-- [ ] **QA-03**: Verify the Deneb Rule holds — no v1 command path executes anything; a test asserts
+- [x] **QA-03**: Verify the Deneb Rule holds — no v1 command path executes anything; a test asserts
       `setup` only prints, never runs.
-- [ ] **QA-04**: Zach's machine = final acceptance gate.
+- [x] **QA-04**: Zach's machine = final acceptance gate.
 
 ## v2+ (deferred — master plan)
 
