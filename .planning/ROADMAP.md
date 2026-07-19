@@ -50,6 +50,9 @@ full QA gate. No execution, no LLM, deterministic throughout.
   2. A test asserts no v1 path executes (the Deneb Rule holds)
   3. All commands keyless + deterministic (no engine/LLM)
   4. Full pytest green + `deneb recommend`/`setup` verified live on this box + Zach's phone/box final gate
+**Plans**: 2 plans
+  - [ ] 03-01-PLAN.md — pure tell-only setup advisory core: Step model + curated platform-branched PLAYBOOK + `setup_steps()` step-gen with inline sudo/download/service warnings (SET-01, SET-02, SET-03, QA-01), TDD
+  - [ ] 03-02-PLAN.md — `deneb setup <model>` CLI wiring (keyless, print-only) + help/README + the QA-03 Deneb-Rule no-execution assertion + full-suite green + live e2e on this box (PLAT-01/02/03, QA-02, QA-03, QA-04)
 
 ## Progress
 
@@ -57,7 +60,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 |-------|----------------|--------|
 | 1. Hardware Profiling | 2/2 | Complete |
 | 2. Compatibility + Recommendation | 2/2 | Complete |
-| 3. Tell-Only Setup + CLI + QA | 0/TBD | Not started |
+| 3. Tell-Only Setup + CLI + QA | 0/2 | Planned |
 
 ## Coverage
 
