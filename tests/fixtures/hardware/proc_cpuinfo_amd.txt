@@ -1,0 +1,7 @@
+processor	: 0
+model name	: AMD RYZEN AI MAX+ 395 w/ Radeon 8060S
+cpu cores	: 16
+
+processor	: 1
+model name	: AMD RYZEN AI MAX+ 395 w/ Radeon 8060S
+cpu cores	: 16

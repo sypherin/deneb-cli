@@ -1,0 +1,9 @@
+============================ ROCm System Management Interface ============================
+================================== Memory Usage (Bytes) ==================================
+GPU[0]		: VRAM Total Memory (B): 1073741824
+GPU[0]		: VRAM Total Used Memory (B): 431341568
+====================================== Product Info ======================================
+GPU[0]		: Card Series: 		AMD Radeon 8060S Graphics
+GPU[0]		: Card SKU: 		STRXLGEN
+GPU[0]		: GFX Version: 		gfx1151
+==========================================================================================
