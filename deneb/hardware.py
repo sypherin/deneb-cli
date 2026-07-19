@@ -2,16 +2,18 @@
 
 HW-01/HW-03/HW-04 contract. This module holds the DATA MODEL (HardwareProfile /
 GPUInfo), one PURE parser per vendor tool (NVIDIA / AMD / Apple) plus CPU/RAM/PCI
-parsers, and the unified-memory + usable-memory CLASSIFICATION logic. It performs
-NO I/O and imports no tool runner: every function here takes an already-captured
-tool-output STRING and returns structured data.
+parsers, and the unified-memory + usable-memory CLASSIFICATION logic. The PURE
+SECTION performs NO I/O and imports no tool runner: every parser takes an
+already-captured tool-output STRING and returns structured data.
 
 INVOCATION-vs-PARSING split (the HW-04 / QA-01 testability requirement): the live
 probe layer — which actually shells out to nvidia-smi / rocm-smi / system_profiler
-via the allowlisted `tools` runner and assembles a full HardwareProfile — lands in
-Plan 02. It mirrors check.py's shape (a thin `_probe()` feeding pure verdict
-functions). Keeping PARSING here, I/O-free, lets us unit-test every hardware fact
-against captured fixtures with no live tool present.
+via the allowlisted `tools` runner and assembles a full HardwareProfile — is the
+ONLY I/O in this module and lives BENEATH the pure parsers (Plan 02). It mirrors
+check.py's shape (thin `_probe_*()` functions feeding the pure parsers, each vendor
+path independent and degrading to [] when its tool is absent — HW-02). Keeping
+PARSING pure and I/O-free lets us unit-test every hardware fact against captured
+fixtures with no live tool present.
 
 Defensiveness is a hard requirement (T-01-01): external tool stdout is untrusted
 text; a malformed / empty / refused blob must degrade to an empty/partial result
@@ -367,3 +369,195 @@ def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int]) -> MemoryClassifi
     except Exception:  # noqa: BLE001 — classification must never crash the profile
         return MemoryClassification(memory_kind="unknown", usable_mem_mb=0,
                                     note="could not classify memory")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIVE PROBE LAYER (Plan 02) — the ONLY I/O in this module.
+#
+# Everything above is pure (string -> struct). Below, each vendor probe shells out
+# through the allowlisted read-only `tools` boundary, hands the captured stdout to
+# the matching pure parser, and returns [] on absence/failure. Every vendor path is
+# INDEPENDENT: a missing tool marks that vendor not-present and NEVER aborts the
+# profile (HW-02). The shape mirrors check.py's per-probe try/except.
+# ═══════════════════════════════════════════════════════════════════════════════
+import os        # noqa: E402
+import platform  # noqa: E402
+import shutil    # noqa: E402
+
+from . import tools  # noqa: E402
+
+
+def _tool_output(cmd: str) -> str:
+    """Run a read-only command through the tools boundary; return its stdout string.
+    Never raises. The 'not installed' / '[refused]' sentinels pass straight through —
+    the pure parsers already treat them as absence (via _is_sentinel)."""
+    try:
+        return tools.run(cmd).get("output", "") or ""
+    except Exception:  # noqa: BLE001 — a probe must never crash the profile
+        return ""
+
+
+def _read_output(path: str) -> str:
+    """Read a proc/sys file through the tools boundary; return its text. Never raises."""
+    try:
+        return tools.read_file(path).get("output", "") or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _parse_rocm_driver(text: str) -> str:
+    """Best-effort 'Driver version: X' from `rocm-smi --showdriverversion`. '' if absent
+    or unparseable (the driver is optional metadata — never let it break the profile)."""
+    if _is_sentinel(text):
+        return ""
+    try:
+        m = re.search(r"Driver version:\s*(\S+)", text)
+        return m.group(1) if m else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+# ── per-vendor probes (each INDEPENDENT, returns [] on absence/failure) ───────
+def _probe_nvidia() -> list:
+    """NVIDIA/CUDA path — nvidia-smi CSV. [] when nvidia-smi is absent/refused/failing."""
+    out = _tool_output(
+        "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader")
+    return parse_nvidia_smi(out)
+
+
+def _probe_amd() -> list:
+    """AMD/ROCm path — rocm-smi --json, with a best-effort driver version. [] when
+    rocm-smi is absent/refused/failing."""
+    gpus = parse_rocm_smi(_tool_output("rocm-smi --showproductname --showmeminfo vram --json"))
+    if gpus:
+        drv = _parse_rocm_driver(_tool_output("rocm-smi --showdriverversion"))
+        if drv:
+            for g in gpus:
+                if not g.driver:
+                    g.driver = drv
+    return gpus
+
+
+def _probe_apple() -> list:
+    """Apple/Metal path — system_profiler. Only attempted on Darwin; [] elsewhere or
+    when the tool is absent. The unified pool comes from sysctl hw.memsize, read once at
+    the profile level and applied by classify_memory."""
+    if platform.system() != "Darwin":
+        return []
+    return parse_system_profiler(_tool_output("system_profiler SPDisplaysDataType"))
+
+
+def _probe_lspci_fallback() -> list:
+    """PCI-id GPU names (`lspci -nn`) — used ONLY to name a GPU whose vendor SMI tool is
+    absent, so the profile can still say 'NVIDIA GPU present, nvidia-smi not installed —
+    VRAM unread'. Never overrides a real SMI reading. [] on absence/failure."""
+    return parse_lspci_gpus(_tool_output("lspci -nn"))
+
+
+def _safe_probe(fn, notes: list, label: str) -> list:
+    """Run a vendor probe; on ANY unexpected error return [] + a note (never crash).
+    Mirrors check.py's per-probe try/except — a probe failure is a degraded field, not a
+    crash (T-02-01)."""
+    try:
+        return fn() or []
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"{label} probe failed ({e}); treated as not-present.")
+        return []
+
+
+def profile_hardware() -> HardwareProfile:
+    """Read the real machine through the allowlisted read-only `tools` boundary and
+    assemble a full HardwareProfile. Every vendor path is INDEPENDENT and degrades to
+    'not present' when its tool is absent — a missing tool NEVER crashes the profile
+    (HW-02). Unified-memory boxes budget the shared RAM pool, not the VRAM carve-out
+    (HW-03), via classify_memory."""
+    notes: list = []
+
+    # ── OS / arch / kernel (stdlib platform — no probe) ──
+    try:
+        system = platform.system() or ""
+        arch = platform.machine() or ""
+        kernel = platform.release() or ""
+    except Exception:  # noqa: BLE001
+        system, arch, kernel = "", "", ""
+    is_linux = system == "Linux"
+    is_darwin = system == "Darwin"
+
+    # ── CPU model + cores ──
+    cpu_model, cpu_cores = "", 0
+    if is_linux:
+        info = parse_cpuinfo(_read_output("/proc/cpuinfo"))
+        cpu_model, cpu_cores = info.get("model", ""), info.get("cores", 0)
+    if not cpu_model:
+        try:
+            cpu_model = platform.processor() or ""
+        except Exception:  # noqa: BLE001
+            cpu_model = ""
+    if not cpu_cores:
+        try:
+            cpu_cores = os.cpu_count() or 0
+        except Exception:  # noqa: BLE001
+            cpu_cores = 0
+
+    # ── RAM total (also the unified pool on Linux/Darwin) ──
+    ram_total_mb = None
+    if is_linux:
+        ram_total_mb = parse_meminfo(_read_output("/proc/meminfo")) or None
+    elif is_darwin:
+        ram_total_mb = parse_sysctl_memsize(_tool_output("sysctl hw.memsize")) or None
+
+    # ── disk free (stdlib shutil — no probe) ──
+    disk_free_mb = None
+    try:
+        disk_free_mb = shutil.disk_usage("/").free // _MIB
+    except Exception:  # noqa: BLE001
+        notes.append("could not read disk free space.")
+
+    # ── vendor GPU probes — each INDEPENDENT; order = detection priority ──
+    gpus: list = []
+    gpus += _safe_probe(_probe_nvidia, notes, "nvidia")
+    gpus += _safe_probe(_probe_amd, notes, "amd")
+    gpus += _safe_probe(_probe_apple, notes, "apple")
+
+    # ── lspci fallback: name a GPU whose vendor SMI tool is absent (never override SMI) ──
+    seen = {(g.vendor or "").lower() for g in gpus}
+    for g in _safe_probe(_probe_lspci_fallback, notes, "lspci"):
+        v = (g.vendor or "").lower()
+        if v in ("amd", "nvidia") and v not in seen:
+            g.driver = None
+            g.extra = dict(g.extra or {}, smi_absent=True)
+            g.name = (g.name or f"{v.upper()} GPU").strip()
+            smi = "nvidia-smi" if v == "nvidia" else "rocm-smi"
+            notes.append(f"{v.upper()} GPU present (via lspci) but {smi} is not installed "
+                         "— VRAM unread.")
+            gpus.append(g)
+            seen.add(v)
+
+    # ── classify memory per GPU (unified vs dedicated + usable budget) ──
+    classifications = [classify_memory(g, ram_total_mb) for g in gpus]
+
+    # ── primary backend + usable-memory budget ──
+    primary_backend = next((g.backend for g in gpus if g.backend), "cpu")
+    usable_mem_mb = None
+    if gpus:
+        idx = next((i for i, g in enumerate(gpus) if g.backend), 0)
+        cls = classifications[idx]
+        usable_mem_mb = cls.usable_mem_mb or None
+        if cls.note and cls.note not in notes:
+            notes.append(cls.note)
+    if usable_mem_mb is None and ram_total_mb:
+        # CPU-only (or a GPU whose budget is unknown): the RAM pool minus headroom is the
+        # honest budget. The floor exists for the '<80GB-free Strix freeze' scar.
+        headroom = max(_UNIFIED_HEADROOM_FLOOR_MB, int(_UNIFIED_HEADROOM_FRACTION * ram_total_mb))
+        usable_mem_mb = max(0, ram_total_mb - headroom)
+        if not gpus:
+            notes.append(f"no GPU vendor tool present — CPU-only; usable budget = system RAM "
+                         f"minus {headroom} MB headroom (coarse, Phase-2-refined).")
+
+    return HardwareProfile(
+        os=system, arch=arch, kernel=kernel,
+        cpu_model=cpu_model, cpu_cores=cpu_cores,
+        ram_total_mb=ram_total_mb, disk_free_mb=disk_free_mb,
+        gpus=gpus, primary_backend=primary_backend,
+        usable_mem_mb=usable_mem_mb, notes=notes,
+    )
