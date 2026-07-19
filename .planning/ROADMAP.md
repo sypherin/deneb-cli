@@ -9,7 +9,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 
 ## Phases
 
-- [ ] **Phase 1: Hardware Profiling** — read any common box (NVIDIA/AMD/Apple/CPU), structured profile, graceful degradation, tested parsers
+- [x] **Phase 1: Hardware Profiling** — read any common box (NVIDIA/AMD/Apple/CPU), structured profile, graceful degradation, tested parsers (completed 2026-07-19)
 - [ ] **Phase 2: Compatibility + Recommendation** — curated model catalog, fit math, `deneb recommend --use` with ranked why
 - [ ] **Phase 3: Tell-Only Setup + CLI + QA** — `deneb setup <model>` advisory (tell-only, risk-flagged), keyless wiring, full QA gate
 
@@ -26,7 +26,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
   4. Pure parsers unit-tested against captured sample tool outputs
 **Plans**: 2 plans
   - [x] 01-01-PLAN.md — pure data model + per-vendor parsers + unified/usable memory classification, tested against captured fixtures
-  - [ ] 01-02-PLAN.md — live profile_hardware() orchestration + tools allowlist + graceful multi-vendor degradation + `deneb profile` (e2e on this box)
+  - [x] 01-02-PLAN.md — live profile_hardware() orchestration + tools allowlist + graceful multi-vendor degradation + `deneb profile` (e2e on this box)
 
 ### Phase 2: Compatibility + Recommendation
 **Goal**: Given a profile + use-case, Deneb deterministically recommends the best model+quant with a plain "why".

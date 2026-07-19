@@ -9,7 +9,7 @@
 
 - [x] **HW-01**: `profile_hardware()` returns a structured HardwareProfile: os/arch, cpu, ram_total,
       disk_free, and per-GPU {vendor, name, vram_mb or unified_mem_mb, driver, backend(cuda/rocm/metal/cpu)}.
-- [ ] **HW-02**: Detection spans NVIDIA (nvidia-smi), AMD (rocm-smi), Apple (system_profiler/sysctl),
+- [x] **HW-02**: Detection spans NVIDIA (nvidia-smi), AMD (rocm-smi), Apple (system_profiler/sysctl),
       and CPU-only. Each vendor path is independent; absence of a vendor tool degrades gracefully
       (never crashes, marks that vendor "not present").
 - [x] **HW-03**: Unified-memory platforms (Apple Silicon, Strix Halo) reported as unified_mem, not VRAM;
