@@ -37,12 +37,13 @@
 
 ### Tell-Only Setup Advisory (SET)
 
-- [ ] **SET-01**: `deneb setup <model>` outputs the ordered setup steps for that model on this
+- [x] **SET-01**: `deneb setup <model>` outputs the ordered setup steps for that model on this
       platform as ADVICE — each step: the exact command, what it does, and a risk/warning flag where
       appropriate (sudo, big download, service change). NEVER executes (the Deneb Rule).
-- [ ] **SET-02**: Steps are platform-branched (CUDA vs ROCm vs Metal vs CPU) from the curated playbook;
+      _(Pure core: `setup_steps()` in deneb/setup_advisor.py — 03-01. CLI display in 03-02.)_
+- [x] **SET-02**: Steps are platform-branched (CUDA vs ROCm vs Metal vs CPU) from the curated playbook;
       pure step-generation is unit-tested.
-- [ ] **SET-03**: Every generated step that would need sudo / download N GB / change a service carries
+- [x] **SET-03**: Every generated step that would need sudo / download N GB / change a service carries
       its warning inline (per the Deneb Rule risk-surfacing principle).
 
 ### Platform / CLI (PLAT)
@@ -55,7 +56,7 @@
 
 ### Quality (QA)
 
-- [ ] **QA-01**: pytest on all pure logic: profile parsers (HW-04), fit math (FIT-02), recommend
+- [x] **QA-01**: pytest on all pure logic: profile parsers (HW-04), fit math (FIT-02), recommend
       ranking (REC-03), setup step generation (SET-02).
 - [ ] **QA-02**: E2E smoke: `deneb recommend` runs on THIS real box (Strix Halo, rocm-smi) and returns
       a sane recommendation; `deneb setup <pick>` prints tell-only steps with warnings.
