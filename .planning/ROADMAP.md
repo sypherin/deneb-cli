@@ -10,7 +10,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 ## Phases
 
 - [x] **Phase 1: Hardware Profiling** — read any common box (NVIDIA/AMD/Apple/CPU), structured profile, graceful degradation, tested parsers (completed 2026-07-19)
-- [ ] **Phase 2: Compatibility + Recommendation** — curated model catalog, fit math, `deneb recommend --use` with ranked why
+- [x] **Phase 2: Compatibility + Recommendation** — curated model catalog, fit math, `deneb recommend --use` with ranked why (completed 2026-07-19)
 - [ ] **Phase 3: Tell-Only Setup + CLI + QA** — `deneb setup <model>` advisory (tell-only, risk-flagged), keyless wiring, full QA gate
 
 ## Phase Details
@@ -39,7 +39,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
   4. "nothing fits" handled honestly
 **Plans**: 2 plans
   - [x] 02-01-PLAN.md — curated model catalog (FIT-01) + pure `fits()` fit-math, speed-tier heuristic, and known-caveat rules (FIT-02, FIT-02b), TDD
-  - [ ] 02-02-PLAN.md — pure deterministic `recommend()` ranking + why-strings + nothing-fits (REC-01, REC-03) + `deneb recommend --use` CLI live on this box (REC-02)
+  - [x] 02-02-PLAN.md — pure deterministic `recommend()` ranking + why-strings + nothing-fits (REC-01, REC-03) + `deneb recommend --use` CLI live on this box (REC-02)
 
 ### Phase 3: Tell-Only Setup + CLI + QA
 **Goal**: `deneb setup <model>` tells the user the platform-correct setup steps (never executes, risk-flagged), the CLI is keyless, and the QA gate passes on Zach's box.
@@ -56,7 +56,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
 | Phase | Plans Complete | Status |
 |-------|----------------|--------|
 | 1. Hardware Profiling | 2/2 | Complete |
-| 2. Compatibility + Recommendation | 1/2 | In Progress |
+| 2. Compatibility + Recommendation | 2/2 | Complete |
 | 3. Tell-Only Setup + CLI + QA | 0/TBD | Not started |
 
 ## Coverage

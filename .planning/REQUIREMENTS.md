@@ -28,11 +28,11 @@
 
 ### Recommendation (REC)
 
-- [ ] **REC-01**: `recommend(profile, use_case)` ranks the catalog to the best-fitting model+quant(s)
+- [x] **REC-01**: `recommend(profile, use_case)` ranks the catalog to the best-fitting model+quant(s)
       for the box + use-case; deterministic ordering; returns top-N with a plain-language "why".
-- [ ] **REC-02**: `deneb recommend [--use coding|vision|chat|general]` CLI: prints the ranked table
+- [x] **REC-02**: `deneb recommend [--use coding|vision|chat|general]` CLI: prints the ranked table
       (model, quant, fit, expected speed, why) + a one-line next-step pointer to `deneb setup <pick>`.
-- [ ] **REC-03**: Ranking + why-string are pure and unit-tested; a "nothing fits" path is handled
+- [x] **REC-03**: Ranking + why-string are pure and unit-tested; a "nothing fits" path is handled
       honestly (tell the user their box is under-spec + the smallest option).
 
 ### Tell-Only Setup Advisory (SET)
