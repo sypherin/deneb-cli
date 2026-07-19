@@ -202,8 +202,8 @@ def cmd_setup(argv=None) -> int:
     ui.banner()
     print(f"{_C['d']}setup steps for {_C['z']}{_C['b']}{mname}{_C['z']} "
           f"{_C['d']}on this box (backend {p.primary_backend}, no engine)…{_C['z']}\n")
-    print(f"  {_C['amber']}Deneb shows every command and runs NOTHING (the Deneb Rule) — "
-          f"you run each yourself.{_C['z']}\n")
+    print(f"  {_C['amber']}Deneb shows every command and runs NOTHING (the Deneb Rule). "
+          f"You run each yourself.{_C['z']}\n")
 
     for i, s in enumerate(steps, 1):
         print(f"  {_C['teal']}{_C['b']}{i}. {s.title}{_C['z']}")
