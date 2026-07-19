@@ -7,14 +7,14 @@
 
 ### Hardware Profiling (HW)
 
-- [ ] **HW-01**: `profile_hardware()` returns a structured HardwareProfile: os/arch, cpu, ram_total,
+- [x] **HW-01**: `profile_hardware()` returns a structured HardwareProfile: os/arch, cpu, ram_total,
       disk_free, and per-GPU {vendor, name, vram_mb or unified_mem_mb, driver, backend(cuda/rocm/metal/cpu)}.
 - [ ] **HW-02**: Detection spans NVIDIA (nvidia-smi), AMD (rocm-smi), Apple (system_profiler/sysctl),
       and CPU-only. Each vendor path is independent; absence of a vendor tool degrades gracefully
       (never crashes, marks that vendor "not present").
-- [ ] **HW-03**: Unified-memory platforms (Apple Silicon, Strix Halo) reported as unified_mem, not VRAM;
+- [x] **HW-03**: Unified-memory platforms (Apple Silicon, Strix Halo) reported as unified_mem, not VRAM;
       the fit math accounts for the shared pool (the <80GB-free scar informs a usable-headroom margin).
-- [ ] **HW-04**: Pure parsers for each tool's output are unit-tested against captured sample outputs
+- [x] **HW-04**: Pure parsers for each tool's output are unit-tested against captured sample outputs
       (no live tool needed in tests).
 
 ### Compatibility + Fit (FIT)

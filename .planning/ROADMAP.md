@@ -25,7 +25,7 @@ full QA gate. No execution, no LLM, deterministic throughout.
   3. Unified-memory boxes reported correctly (not as VRAM)
   4. Pure parsers unit-tested against captured sample tool outputs
 **Plans**: 2 plans
-  - [ ] 01-01-PLAN.md — pure data model + per-vendor parsers + unified/usable memory classification, tested against captured fixtures
+  - [x] 01-01-PLAN.md — pure data model + per-vendor parsers + unified/usable memory classification, tested against captured fixtures
   - [ ] 01-02-PLAN.md — live profile_hardware() orchestration + tools allowlist + graceful multi-vendor degradation + `deneb profile` (e2e on this box)
 
 ### Phase 2: Compatibility + Recommendation
