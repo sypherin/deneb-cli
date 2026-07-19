@@ -214,6 +214,193 @@ def test_classify_never_raises_on_missing_ram():
     assert res.usable_mem_mb == 0                      # honest: budget unknown, never a crash
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIVE ORCHESTRATION — graceful multi-vendor degradation (Plan 02, HW-02)
+#
+# profile_hardware() drives the live probe layer. We monkeypatch the `tools` boundary
+# (mirroring test_check.py's _install router) to simulate four boxes that each have
+# EXACTLY ONE vendor tool — the real-world case (HW-02): most boxes have one of
+# nvidia-smi / rocm-smi / system_profiler, never all three. Absent tools return the
+# "(not installed on this box: X)" sentinel and MUST degrade to not-present with NO
+# crash. Plus a live assertion on THIS real Strix Halo box.
+# ═══════════════════════════════════════════════════════════════════════════════
+import contextlib  # noqa: E402
+import platform    # noqa: E402
+import shutil      # noqa: E402
+
+_NOT_INSTALLED = "(not installed on this box: x)"
+# rocm-smi --showdriverversion sample (optional metadata).
+_ROCM_DRIVER = ("Driver version: 6.10.5\n")
+
+
+def _run_router(mapping: dict):
+    """Fake tools.run: first value whose key is a substring of cmd; absent tools return
+    the not-installed sentinel (so the parser sees absence)."""
+    def fake_run(cmd, *a, **k):
+        for key, val in mapping.items():
+            if key in cmd:
+                return {"ok": True, "output": val}
+        return {"ok": True, "output": _NOT_INSTALLED}
+    return fake_run
+
+
+def _read_router(mapping: dict):
+    def fake_read(path, *a, **k):
+        for key, val in mapping.items():
+            if key in path:
+                return {"ok": True, "output": val}
+        return {"ok": True, "output": f"(does not exist: {path})"}
+    return fake_read
+
+
+class _FakeTools:
+    def __init__(self, run_fn, read_fn):
+        self.run, self.read_file = run_fn, read_fn
+
+
+class _FakePlatform:
+    def __init__(self, system):
+        self._s = system
+
+    def system(self):
+        return self._s
+
+    def machine(self):
+        return "arm64" if self._s == "Darwin" else "x86_64"
+
+    def release(self):
+        return "23.0.0"
+
+    def processor(self):
+        return "Apple" if self._s == "Darwin" else "x86_64"
+
+
+@contextlib.contextmanager
+def simulated_box(run_map, read_map=None, system="Linux"):
+    """Swap hardware.tools (and platform, for the Apple box) for fakes, then restore —
+    leaves the real tools module untouched so the live test still reads the real box."""
+    real_tools, real_platform = hardware.tools, hardware.platform
+    hardware.tools = _FakeTools(_run_router(run_map), _read_router(read_map or {}))
+    if system != real_platform.system():
+        hardware.platform = _FakePlatform(system)
+    try:
+        yield
+    finally:
+        hardware.tools = real_tools
+        hardware.platform = real_platform
+
+
+# Deterministic CPU/RAM fixtures (Linux boxes read /proc via the patched read_file).
+_LINUX_READS = {
+    "/proc/cpuinfo": load("proc_cpuinfo_amd.txt"),
+    "/proc/meminfo": load("proc_meminfo.txt"),
+}
+
+
+def test_nvidia_only_box_one_cuda_gpu_no_crash():
+    run_map = {"nvidia-smi --query-gpu": load("nvidia-smi_single.csv")}  # rocm/apple/lspci absent
+    with simulated_box(run_map, _LINUX_READS):
+        p = hardware.profile_hardware()
+    assert isinstance(p, hardware.HardwareProfile)
+    assert len(p.gpus) == 1
+    assert p.gpus[0].vendor == "nvidia" and p.gpus[0].backend == "cuda"
+    assert p.primary_backend == "cuda"
+    assert p.gpus[0].vram_mb == 24564 and p.gpus[0].memory_kind == "dedicated"
+    # absent vendors are simply not represented (HW-02)
+    assert not any(g.vendor in ("amd", "apple") for g in p.gpus)
+    assert p.ram_total_mb == 126908 and p.cpu_cores == 2
+
+
+def test_amd_only_strix_box_unified_from_ram_not_carveout():
+    run_map = {
+        "rocm-smi --showproductname": load("rocm-smi_strix_gfx1151.json"),
+        "rocm-smi --showdriverversion": _ROCM_DRIVER,
+    }  # nvidia/apple/lspci absent
+    with simulated_box(run_map, _LINUX_READS):
+        p = hardware.profile_hardware()
+    assert len(p.gpus) == 1
+    g = p.gpus[0]
+    assert g.vendor == "amd" and g.backend == "rocm"
+    assert g.memory_kind == "unified"
+    assert g.unified_mem_mb == 126908          # system RAM, NOT the 1024 carve-out
+    assert g.vram_carveout_mb == 1024
+    assert 0 < p.usable_mem_mb < 126908         # usable from the RAM pool, minus headroom
+    assert p.primary_backend == "rocm"
+    assert not any(x.vendor in ("nvidia", "apple") for x in p.gpus)
+
+
+def test_apple_only_box_one_metal_gpu_unified():
+    run_map = {
+        "system_profiler SPDisplaysDataType": load("system_profiler_m2max.txt"),
+        "sysctl hw.memsize": load("sysctl_hw_memsize.txt"),
+    }  # nvidia/rocm/lspci absent; platform patched to Darwin
+    with simulated_box(run_map, read_map={}, system="Darwin"):
+        p = hardware.profile_hardware()
+    assert p.os == "Darwin"
+    assert len(p.gpus) == 1
+    g = p.gpus[0]
+    assert g.vendor == "apple" and g.backend == "metal"
+    assert g.memory_kind == "unified"
+    assert g.unified_mem_mb == 65536            # unified pool from sysctl hw.memsize
+    assert p.primary_backend == "metal"
+    assert not any(x.vendor in ("nvidia", "amd") for x in p.gpus)
+
+
+def test_cpu_only_box_returns_profile_no_gpu_backend_cpu():
+    with simulated_box({}, _LINUX_READS):        # ALL vendor tools absent
+        p = hardware.profile_hardware()
+    assert isinstance(p, hardware.HardwareProfile)
+    assert p.gpus == []                          # no vendor represented
+    assert p.primary_backend == "cpu"
+    assert p.ram_total_mb == 126908
+    assert 0 < p.usable_mem_mb < 126908          # budget from RAM, not a GPU
+    assert p.cpu_model                           # CPU still read
+
+
+def test_no_vendor_tool_never_raises_across_all_four_boxes():
+    # The HW-02 contract in one shot: none of the four degraded boxes raises.
+    boxes = [
+        ({"nvidia-smi --query-gpu": load("nvidia-smi_single.csv")}, _LINUX_READS, "Linux"),
+        ({"rocm-smi --showproductname": load("rocm-smi_strix_gfx1151.json")}, _LINUX_READS, "Linux"),
+        ({"system_profiler SPDisplaysDataType": load("system_profiler_m2max.txt"),
+          "sysctl hw.memsize": load("sysctl_hw_memsize.txt")}, {}, "Darwin"),
+        ({}, _LINUX_READS, "Linux"),
+    ]
+    for run_map, read_map, system in boxes:
+        with simulated_box(run_map, read_map, system):
+            p = hardware.profile_hardware()          # must not raise
+        assert isinstance(p, hardware.HardwareProfile)
+
+
+def test_live_this_box_amd_unified_no_nvidia_no_apple():
+    """LIVE e2e gate on THIS real Strix Halo box (skipped elsewhere): one AMD/rocm/gfx1151
+    GPU with unified ~124GB (NOT the 1GB carve-out), NVIDIA + Apple absent, no crash."""
+    if platform.system() != "Linux" or shutil.which("rocm-smi") is None:
+        try:
+            import pytest
+            pytest.skip("live AMD/ROCm assertion is only meaningful on the Strix Halo box")
+        except ImportError:
+            return
+    p = hardware.profile_hardware()                  # real tools, real box
+    assert isinstance(p, hardware.HardwareProfile)
+    assert p.os == "Linux" and p.arch == "x86_64"
+    amd = [g for g in p.gpus if g.vendor == "amd"]
+    assert len(amd) == 1
+    g = amd[0]
+    assert g.backend == "rocm"
+    assert g.extra.get("gfx") == "gfx1151"
+    assert g.memory_kind == "unified"
+    assert g.unified_mem_mb and g.unified_mem_mb > 100_000   # ~124GB pool
+    assert g.unified_mem_mb != 1024                          # NOT the carve-out
+    assert g.vram_carveout_mb == 1024                        # the carve-out is recorded, not budgeted
+    assert not any(x.vendor in ("nvidia", "apple") for x in p.gpus)  # absent + unmentioned
+    assert p.primary_backend == "rocm"
+    assert "RYZEN AI MAX+ 395" in p.cpu_model
+    assert p.ram_total_mb and p.ram_total_mb > 100_000
+    assert p.disk_free_mb is not None
+    assert 0 < p.usable_mem_mb < p.ram_total_mb
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
