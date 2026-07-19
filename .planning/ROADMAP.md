@@ -37,7 +37,9 @@ full QA gate. No execution, no LLM, deterministic throughout.
   2. `fits()` pure + unit-tested (7B-Q4 fits 16GB; 70B-Q4 does not; unified-mem headroom honored)
   3. `deneb recommend --use coding` on this box returns a sane ranked recommendation with why-strings
   4. "nothing fits" handled honestly
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 02-01-PLAN.md — curated model catalog (FIT-01) + pure `fits()` fit-math, speed-tier heuristic, and known-caveat rules (FIT-02, FIT-02b), TDD
+  - [ ] 02-02-PLAN.md — pure deterministic `recommend()` ranking + why-strings + nothing-fits (REC-01, REC-03) + `deneb recommend --use` CLI live on this box (REC-02)
 
 ### Phase 3: Tell-Only Setup + CLI + QA
 **Goal**: `deneb setup <model>` tells the user the platform-correct setup steps (never executes, risk-flagged), the CLI is keyless, and the QA gate passes on Zach's box.
@@ -53,8 +55,8 @@ full QA gate. No execution, no LLM, deterministic throughout.
 
 | Phase | Plans Complete | Status |
 |-------|----------------|--------|
-| 1. Hardware Profiling | 0/2 | Planned |
-| 2. Compatibility + Recommendation | 0/TBD | Not started |
+| 1. Hardware Profiling | 2/2 | Complete |
+| 2. Compatibility + Recommendation | 0/2 | Planned |
 | 3. Tell-Only Setup + CLI + QA | 0/TBD | Not started |
 
 ## Coverage
