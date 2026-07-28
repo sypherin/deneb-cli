@@ -143,19 +143,51 @@ _SURYA = Service(
     label="Surya 1 (OCR, container)",
     role="document OCR - layout, reading order, text extraction",
     port=8090,
-    notes="not a GGUF and not llama.cpp: a Python service in a container",
+    notes="not a GGUF and not llama.cpp: a Python library that you must wrap in an HTTP server",
     steps=[
         ServiceStep(
-            title="Run the OCR service",
+            title="Understand that Surya 1 ships no server",
             what=_plain(
-                "Surya 1 is a Python stack, so it runs as a container rather than under "
-                "llama-server. It is the generation that has been in production use; Surya 2 "
-                "below is the GGUF successor."),
-            command="podman start surya-only || podman run -d --name surya-only --device /dev/dri -p 127.0.0.1:8090:8090 <surya-image>",
+                "This is the part that surprises people. Surya 1 is a Python LIBRARY - it "
+                "gives you predictor classes, not an endpoint. There is no upstream image "
+                "to pull and no `surya serve`. Something has to wrap it in HTTP, and that "
+                "wrapper is yours to write and to containerise. Budget for it: it is a real "
+                "component, not a config line, and it is the reason 'just run Surya' takes a "
+                "day rather than an hour."),
+            warnings=["there is no official ready-made server image - do not plan around "
+                      "finding one."],
+        ),
+        ServiceStep(
+            title="Write the wrapper with the models loaded ONCE at startup",
+            what=_plain(
+                "The pipeline is three predictors in sequence: detection finds text boxes, "
+                "recognition reads them, layout classifies the regions. Load all three at "
+                "process start (FastAPI's lifespan hook, or equivalent) and hold them. "
+                "Loading them per request is the classic mistake here - it works in testing "
+                "with one page and then adds the full model-load time to every single call "
+                "in production."),
+            command=("# contract the wrapper must satisfy:\n"
+                     "#   GET  /healthz              -> 200 once the models are resident\n"
+                     "#   POST /layout               -> multipart form field: image\n"
+                     "#        returns tokens: [{type, bbox (normalised 0-1), text, conf}]\n"
+                     "# load DetectionPredictor + RecognitionPredictor + LayoutPredictor\n"
+                     "# at startup, never per request"),
+            warnings=["a health endpoint that returns 200 before the models finish loading "
+                      "will have every orchestrator declare the service ready while the "
+                      "first real request times out."],
+        ),
+        ServiceStep(
+            title="Run it, bound to loopback",
+            what=_plain(
+                "Containerised so the Python and GPU dependencies stay pinned. It needs the "
+                "GPU device passed through, and it stays on loopback because the gateway is "
+                "what anything outside talks to."),
+            command="podman start surya || podman run -d --name surya --device /dev/dri -p 127.0.0.1:8090:8090 <your-image>",
             warnings=[_SERVICE_WARNING,
-                      "the image name is site-specific - use the one your deployment built."],
+                      "the image is one you built around your own wrapper - there is no "
+                      "canonical name for it."],
             verify="curl -s localhost:8090/healthz",
-            expect="ok",
+            expect="200 once the models are resident, not before",
         ),
         ServiceStep(
             title="Pre-warm with real page shapes",
