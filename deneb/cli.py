@@ -416,12 +416,28 @@ def cmd_stack(argv=None) -> int:
         print(f"\n{_C['b']}{svc.label}{_C['z']}")
     else:
         chosen = services.stack_services()
-        print(f"\n{_C['b']}Private LLM stack - one authenticated endpoint{_C['z']}")
+        print(f"\n{_C['b']}Private LLM stack - three endpoints behind one authenticated "
+              f"front door{_C['z']}")
         print(f"{_C['d']}brought up in this order on purpose: backends, then the gateway "
               f"that fronts them, then exposure. Standing the tunnel up first would publish "
               f"an unauthenticated model.{_C['z']}")
         print(f"\n{_C['teal']}  cloud app  ->  tunnel  ->  gateway :8002  ->  "
               f"LLM :8001 / VLM :8080 / OCR :8093{_C['z']}")
+
+        # Platform caveats. The llama-server commands are portable; what surrounds them is
+        # not, and those differences only surface when someone is already at the machine.
+        from . import hardware, platform_guide
+        detected = platform_guide.detect_platform(hardware.profile_hardware())
+        notes = services.platform_notes(detected)
+        if notes:
+            label = platform_guide.guide_for(detected)
+            print(f"\n{_C['b']}On this box ({label.label if label else detected}){_C['z']}")
+            for note in notes:
+                print(f"  {_C['amber']}- {note}{_C['z']}")
+        elif detected == "":
+            print(f"\n{_C['d']}could not identify this box; the commands below are the "
+                  f"portable part. Run `deneb guide <platform>` for the machine-specific "
+                  f"prerequisites.{_C['z']}")
 
     for svc in chosen:
         where = f" :{svc.port}" if svc.port else ""
