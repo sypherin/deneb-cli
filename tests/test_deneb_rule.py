@@ -90,7 +90,11 @@ _CLI_FORBIDDEN = ("tools.", "subprocess", "os.system", "os.popen",
 
 
 def test_cli_tellonly_fns_reference_no_executor():
-    for fn in (cli.cmd_setup, cli.cmd_recommend, cli.cmd_profile):
+    # cmd_guide and cmd_selfupdate are tell-only too, and carry the HIGHEST stakes
+    # in the CLI: their printed commands edit BIOS, the bootloader, and Deneb's own
+    # installed code. If any of them ever gains an executor, this is what catches it.
+    for fn in (cli.cmd_setup, cli.cmd_recommend, cli.cmd_profile,
+               cli.cmd_guide, cli.cmd_selfupdate):
         src = inspect.getsource(fn)
         hits = [t for t in _CLI_FORBIDDEN if t in src]
         assert not hits, f"{fn.__name__} references an executor token: {hits}"

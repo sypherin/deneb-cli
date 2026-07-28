@@ -316,6 +316,131 @@ def _interactive(auto: bool = False) -> int:
     return 0
 
 
+def cmd_guide(argv=None) -> int:
+    """`deneb guide [platform]` — the PRE-FLIGHT runbook for the box itself.
+
+    `deneb setup <model>` assumes the machine underneath is already sane. On both boxes
+    Deneb targets that assumption is wrong in ways that do not announce themselves: a Strix
+    Halo on the factory BIOS carveout runs and then dies under sustained load; a DGX Spark
+    with mismatched kernel headers installs a driver that never built. Both present as model
+    problems. This command is the layer that prevents them.
+
+    Local, deterministic, KEYLESS, engine-free. Runs NOTHING - the Deneb Rule, which matters
+    more here than anywhere else in the CLI because these steps edit BIOS and the bootloader.
+    """
+    from . import hardware, platform_guide
+    argv = list(argv or [])
+    key = " ".join(a for a in argv if not a.startswith("-")).strip()
+
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+
+    detected = ""
+    if not key:
+        # No platform named: read the box and pick. Detection is advisory, and is stated as
+        # such, so a wrong guess is visible rather than silently followed.
+        p = hardware.profile_hardware()          # read-only probe (diagnosis, allowed)
+        detected = platform_guide.detect_platform(p)
+        key = detected
+
+    guide = platform_guide.guide_for(key)
+    if guide is None:
+        names = ", ".join(sorted(platform_guide.GUIDES))
+        if detected == "" and not argv:
+            ui.error("could not tell what this box is from a hardware probe.\n"
+                     f"       name it yourself:  deneb guide <{names}>")
+        else:
+            ui.error(f"no guide for '{key}'.\n       available:  {names}")
+        return 2
+
+    print(f"\n{_C['b']}{guide.label}{_C['z']}")
+    if detected:
+        print(f"{_C['d']}detected from this box - if that looks wrong, "
+              f"name the platform explicitly{_C['z']}")
+    print(f"{_C['d']}applies to: {guide.applies_to}{_C['z']}")
+    print(f"{_C['teal']}recommended OS: {guide.recommended_os}{_C['z']}")
+
+    # Distro family, so the package advice matches the box rather than assuming Debian.
+    try:
+        with open("/etc/os-release", encoding="utf-8") as fh:
+            fam = platform_guide.distro_family(fh.read())
+        if fam:
+            print(f"{_C['d']}this box looks like a {fam}-family distro{_C['z']}")
+    except OSError:
+        pass
+
+    for n, step in enumerate(guide.steps, 1):
+        print(f"\n{_C['b']}{n}. {step.title}{_C['z']}")
+        print(f"   {step.what}")
+        if step.command:
+            print(f"   {_C['g']}{step.command}{_C['z']}")
+        for w in step.warnings:
+            print(f"   {_C['amber']}! {w}{_C['z']}")
+        if step.verify:
+            print(f"   {_C['d']}verify: {step.verify}{_C['z']}")
+            if step.expect:
+                print(f"   {_C['d']}expect: {step.expect}{_C['z']}")
+
+    print(f"\n{_C['d']}source: {guide.source}{_C['z']}")
+    print(f"{_C['amber']}Deneb printed these and ran none of them. Read every command before "
+          f"you run it - these edit firmware and the bootloader.{_C['z']}\n")
+    return 0
+
+
+def cmd_selfupdate(argv=None) -> int:
+    """`deneb selfupdate` — how to update Deneb on THIS box, including a remote one.
+
+    Deneb is installed with pipx, and the installer is safe to re-run, so updating is one
+    command. It is printed, never run: self-updating is a process replacing its own code,
+    which is precisely the kind of thing the Deneb Rule exists to keep out of Deneb's hands,
+    and on a client's machine it is their change to make, not ours.
+
+    `--remote user@host` prints the same thing wrapped in ssh, for updating an install you
+    are not sitting in front of.
+    """
+    argv = list(argv or [])
+    remote = _flag(argv, "--remote")
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "amber": "\033[33m", "teal": "\033[38;5;44m"}
+
+    installer = "curl -fsSL https://deneb-engine.altronis.sg/install | sh"
+    local_cmds = [
+        ("update Deneb in place", installer,
+         "re-runs the installer, which pipx-installs the current version over the old one. "
+         "Safe to re-run; it never asks for sudo."),
+        ("confirm the version afterwards", "deneb --version",
+         "prints the installed version so you can see the update actually landed."),
+    ]
+
+    print(f"\n{_C['b']}Update Deneb{_C['z']}")
+    print(f"{_C['d']}installed version here: {__version__}{_C['z']}")
+
+    if remote:
+        print(f"{_C['teal']}target: {remote}{_C['z']}")
+        print(f"\n{_C['b']}1. Update Deneb on {remote}{_C['z']}")
+        print("   runs the same installer over SSH. The remote user needs a login shell and "
+              "pipx on PATH.")
+        print(f"   {_C['g']}ssh {remote} '{installer}'{_C['z']}")
+        print(f"\n{_C['b']}2. Confirm it landed{_C['z']}")
+        print(f"   {_C['g']}ssh {remote} 'deneb --version'{_C['z']}")
+        print(f"   {_C['amber']}! if deneb is not found over ssh, pipx's ~/.local/bin is "
+              f"missing from the non-interactive PATH. Use the full path:  "
+              f"ssh {remote} '~/.local/bin/deneb --version'{_C['z']}")
+        print(f"   {_C['amber']}! this runs a remote install on someone else's machine. "
+              f"Tell them before you do it.{_C['z']}")
+    else:
+        for n, (title, cmd, what) in enumerate(local_cmds, 1):
+            print(f"\n{_C['b']}{n}. {title}{_C['z']}")
+            print(f"   {what}")
+            print(f"   {_C['g']}{cmd}{_C['z']}")
+        print(f"\n{_C['d']}updating a box you are not sitting at:  "
+              f"deneb selfupdate --remote user@host{_C['z']}")
+
+    print(f"\n{_C['amber']}Deneb printed this and ran nothing. A process that rewrites its "
+          f"own code should be your decision, not its.{_C['z']}\n")
+    return 0
+
+
 _HELP = """Deneb (Altronis) — get your AI box to a working private-LLM (Neo) state.
 
 usage:
@@ -325,6 +450,8 @@ usage:
   deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
   deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
   deneb setup <model>           print the tell-only, platform-branched setup steps (runs nothing)
+  deneb guide [platform]        pre-flight runbook for the BOX (strix-halo | dgx-spark)
+  deneb selfupdate [--remote u@h]  how to update Deneb, here or on another box
   deneb --image <path> "<q>"    diagnose a screenshot
   deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
   deneb auth --token <token>    sign in with your Altronis token
@@ -360,6 +487,10 @@ def main(argv=None) -> int:
         return cmd_recommend(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] == "setup":
         return cmd_setup(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
+    if argv and argv[0] == "guide":
+        return cmd_guide(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
+    if argv and argv[0] in ("selfupdate", "self-update"):
+        return cmd_selfupdate(argv[1:])  # tell-only (Deneb Rule)
     image = _flag(argv, "--image")
     auto = "--auto" in argv
     question_words = []
