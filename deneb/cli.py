@@ -387,6 +387,67 @@ def cmd_guide(argv=None) -> int:
     return 0
 
 
+def cmd_stack(argv=None) -> int:
+    """`deneb stack [service]` — several models behind ONE authenticated endpoint.
+
+    The question these boxes actually pose is not "how do I run a model" but "how do I run
+    an LLM, a vision model and OCR at once, and let a cloud app reach them through a single
+    endpoint without exposing any of them". `deneb setup` cannot express that: Surya is not
+    a chat model, one generation of it is not even a GGUF, and the gateway and tunnel are
+    not models at all.
+
+    Local, deterministic, KEYLESS, engine-free. Prints and runs nothing (the Deneb Rule).
+    """
+    from . import services
+    argv = list(argv or [])
+    want = " ".join(a for a in argv if not a.startswith("-")).strip()
+
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+
+    if want:
+        svc = services.resolve_service(want)
+        if svc is None:
+            ui.error(f"unknown service '{want}'.\n"
+                     f"       available:  {', '.join(sorted(services.SERVICES))}\n"
+                     f"       or the whole stack:  deneb stack")
+            return 2
+        chosen = [svc]
+        print(f"\n{_C['b']}{svc.label}{_C['z']}")
+    else:
+        chosen = services.stack_services()
+        print(f"\n{_C['b']}Private LLM stack - one authenticated endpoint{_C['z']}")
+        print(f"{_C['d']}brought up in this order on purpose: backends, then the gateway "
+              f"that fronts them, then exposure. Standing the tunnel up first would publish "
+              f"an unauthenticated model.{_C['z']}")
+        print(f"\n{_C['teal']}  cloud app  ->  tunnel  ->  gateway :8002  ->  "
+              f"LLM :8001 / VLM :8080 / OCR :8093{_C['z']}")
+
+    for svc in chosen:
+        where = f" :{svc.port}" if svc.port else ""
+        print(f"\n{_C['teal']}{_C['b']}▸ {svc.label}{where}{_C['z']}")
+        print(f"  {_C['d']}{svc.role}{_C['z']}")
+        if svc.notes:
+            print(f"  {_C['d']}{svc.notes}{_C['z']}")
+        for n, step in enumerate(svc.steps, 1):
+            print(f"\n  {_C['b']}{n}. {step.title}{_C['z']}")
+            print(f"     {step.what}")
+            if step.command:
+                for line in step.command.split("\n"):
+                    print(f"     {_C['g']}{line}{_C['z']}")
+            for w in step.warnings:
+                print(f"     {_C['amber']}! {w}{_C['z']}")
+            if step.verify:
+                print(f"     {_C['d']}verify: {step.verify}{_C['z']}")
+            if step.expect:
+                print(f"     {_C['d']}expect: {step.expect}{_C['z']}")
+
+    print(f"\n{_C['amber']}Deneb printed these and ran none of them. The gateway step is the "
+          f"security boundary - test that an unauthenticated call gets 401 before you expose "
+          f"anything.{_C['z']}\n")
+    return 0
+
+
 def cmd_selfupdate(argv=None) -> int:
     """`deneb selfupdate` — how to update Deneb on THIS box, including a remote one.
 
@@ -451,6 +512,8 @@ usage:
   deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
   deneb setup <model>           print the tell-only, platform-branched setup steps (runs nothing)
   deneb guide [platform]        pre-flight runbook for the BOX (strix-halo | dgx-spark)
+  deneb stack [service]         several models behind ONE authed endpoint
+                                (llm | vlm | surya | surya2 | gateway | tunnel)
   deneb selfupdate [--remote u@h]  how to update Deneb, here or on another box
   deneb --image <path> "<q>"    diagnose a screenshot
   deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
@@ -489,6 +552,8 @@ def main(argv=None) -> int:
         return cmd_setup(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] == "guide":
         return cmd_guide(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
+    if argv and argv[0] == "stack":
+        return cmd_stack(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] in ("selfupdate", "self-update"):
         return cmd_selfupdate(argv[1:])  # tell-only (Deneb Rule)
     image = _flag(argv, "--image")
