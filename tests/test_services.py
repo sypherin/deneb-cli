@@ -213,3 +213,39 @@ def test_both_platforms_warn_about_shared_memory_across_all_three_services():
 def test_unknown_platform_yields_no_invented_caveats():
     assert sv.platform_notes("") == []
     assert sv.platform_notes("some-other-box") == []
+
+
+def test_surya1_says_it_ships_no_server():
+    # The trap: Surya 1 is a library, not a service. There is no upstream image to pull and
+    # no `surya serve`, so the HTTP wrapper is a component someone has to build. Planning
+    # around finding a ready-made one is how "just run Surya" becomes a lost day.
+    blob = " ".join(f"{s.title} {s.what} {' '.join(s.warnings)}"
+                    for s in sv.SERVICES["surya"].steps).lower()
+    assert "library" in blob
+    assert "no upstream image" in blob or "no official ready-made server image" in blob
+
+
+def test_surya1_wrapper_loads_models_once_not_per_request():
+    # Per-request loading passes a one-page test and then adds full model-load time to
+    # every call in production.
+    blob = " ".join(f"{s.what} {s.command} {' '.join(s.warnings)}"
+                    for s in sv.SERVICES["surya"].steps).lower()
+    assert "per request" in blob
+    assert "startup" in blob
+
+
+def test_surya1_health_must_not_go_green_early():
+    # A health endpoint that returns 200 before models are resident makes every orchestrator
+    # declare the service ready while the first real request times out.
+    surya = sv.SERVICES["surya"]
+    blob = " ".join(f"{s.expect} {' '.join(s.warnings)}" for s in surya.steps).lower()
+    assert "resident" in blob
+
+
+def test_surya1_contract_is_described_without_naming_any_deployment():
+    # Deneb ships the CONTRACT, never anyone's source. Nothing here may carry a customer,
+    # product or project name.
+    blob = " ".join(f"{s.title} {s.what} {s.command}" for s in sv.SERVICES["surya"].steps).lower()
+    assert "/healthz" in blob and "/layout" in blob
+    for forbidden in ("cf-platform", "cf_platform", "docflow", "chong"):
+        assert forbidden not in blob
