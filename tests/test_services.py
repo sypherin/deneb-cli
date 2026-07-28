@@ -249,3 +249,43 @@ def test_surya1_contract_is_described_without_naming_any_deployment():
     assert "/healthz" in blob and "/layout" in blob
     for forbidden in ("cf-platform", "cf_platform", "docflow", "chong"):
         assert forbidden not in blob
+
+
+# ── download and serve must agree ─────────────────────────────────────────────
+def _gguf_names(text):
+    import re
+    return set(re.findall(r"[\w.\-/]+\.gguf", text))
+
+
+def test_every_file_the_server_opens_is_one_the_download_fetches():
+    """The defect this catches actually shipped.
+
+    The download commands were written from the model repository's contents and the serve
+    commands from a working machine, where the files had been renamed by hand. Both halves
+    were individually correct and together they were unrunnable: following the steps in
+    order downloaded one set of filenames and then started a server pointing at another.
+    Nothing in the text looked wrong, because each line was true in isolation.
+    """
+    for key in ("llm", "vlm"):
+        svc = sv.SERVICES[key]
+        fetched, opened = set(), set()
+        for step in svc.steps:
+            if "hf download" in step.command:
+                fetched |= _gguf_names(step.command)
+            if "llama-server" in step.command:
+                opened |= {n.split("/")[-1] for n in _gguf_names(step.command)}
+        assert fetched, f"{key}: no download step found"
+        assert opened, f"{key}: no serve step found"
+        fetched_base = {n.split("/")[-1] for n in fetched}
+        missing = opened - fetched_base
+        assert not missing, (
+            f"{key}: the serve command opens {sorted(missing)}, which the download step "
+            f"never fetches (it fetches {sorted(fetched_base)})")
+
+
+def test_the_speculative_draft_model_is_actually_downloaded():
+    # -md pointing at a file that was never fetched means the server refuses to start, and
+    # the error names a path rather than the missing --include.
+    llm = sv.SERVICES["llm"]
+    dl = " ".join(s.command for s in llm.steps if "hf download" in s.command)
+    assert "mtp" in dl.lower(), "the MTP draft model is referenced but never downloaded"

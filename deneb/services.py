@@ -78,7 +78,9 @@ _LLM = Service(
                 "markedly slower, so it is easy to skip and then wonder why throughput is "
                 "poor."),
             command=("hf download unsloth/gemma-4-26B-A4B-it-GGUF "
-                     "--include 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf' --local-dir ~/models/gemma-4-q4"),
+                     "--include 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf' "
+                     "--include 'MTP/mtp-gemma-4-26B-A4B-it-F16.gguf' "
+                     "--local-dir ~/models/gemma-4-q4"),
             warnings=[_BIG_DOWNLOAD],
         ),
         ServiceStep(
@@ -89,7 +91,7 @@ _LLM = Service(
                 "ONLY because the gateway in front is what enforces auth; on a box with no "
                 "gateway this must be 127.0.0.1."),
             command=(f"{_LLAMA} -m ~/models/gemma-4-q4/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf "
-                     "-md ~/models/gemma-4-q4/mtp-gemma-4-26B-A4B-it.gguf "
+                     "-md ~/models/gemma-4-q4/MTP/mtp-gemma-4-26B-A4B-it-F16.gguf "
                      "--spec-type draft-mtp --spec-draft-n-max 3 -ngld 99 "
                      "--ctx-size 131072 --port 8001 --host 0.0.0.0 -ngl 99 --mmap --jinja "
                      "--ubatch-size 1024 -fa 1 -ctk q8_0 -ctv q8_0 --cache-prompt"),
@@ -117,8 +119,8 @@ _VLM = Service(
                 "text, and silently cannot see images - which reads as a bad model rather "
                 "than a missing file."),
             command=("hf download unsloth/Qwen3-VL-32B-Instruct-GGUF "
-                     "--include '*Q4_K_M.gguf' --include '*mmproj*F16.gguf' "
-                     "--local-dir ~/models/qwen-vlm"),
+                     "--include 'Qwen3-VL-32B-Instruct-Q4_K_M.gguf' "
+                     "--include 'mmproj-F16.gguf' --local-dir ~/models/qwen-vlm"),
             warnings=[_BIG_DOWNLOAD],
         ),
         ServiceStep(
@@ -127,8 +129,8 @@ _VLM = Service(
                 "--no-mmap because the weights are pinned rather than paged, which matters "
                 "on a unified-memory box. Context is deliberately small: vision tokens are "
                 "expensive and a large window here costs memory the LLM needs."),
-            command=(f"{_LLAMA} -m ~/models/qwen-vlm/Qwen3VL-32B-Instruct-Q4_K_M.gguf "
-                     "--mmproj ~/models/qwen-vlm/mmproj-Qwen3VL-32B-Instruct-F16.gguf "
+            command=(f"{_LLAMA} -m ~/models/qwen-vlm/Qwen3-VL-32B-Instruct-Q4_K_M.gguf "
+                     "--mmproj ~/models/qwen-vlm/mmproj-F16.gguf "
                      "-ngl 99 --no-mmap --flash-attn on -c 8192 --ubatch-size 512 "
                      "--host 127.0.0.1 --port 8080 --temp 0.1"),
             warnings=[_SERVICE_WARNING],
