@@ -198,41 +198,62 @@ _STRIX = PlatformGuide(
 
 # ── DGX Spark ─────────────────────────────────────────────────────────────────
 _DGX = PlatformGuide(
-    label="NVIDIA DGX Spark (GB10 Blackwell)",
-    applies_to="GB10 Blackwell, 128 GB unified memory",
-    recommended_os="Ubuntu 22.04 LTS (NVIDIA's reference platform)",
-    source="on-prem private LLM runbook",
+    label="NVIDIA DGX Spark (GB10 Grace Blackwell)",
+    applies_to="GB10 Grace Blackwell, aarch64 (Arm), 128 GB unified memory",
+    recommended_os="DGX OS 7 (Ubuntu 24.04 base) as shipped - do NOT reinstall",
+    source="DGX Spark out-of-box behaviour, verified against NVIDIA docs 2026-07",
     steps=[
         GuideStep(
-            title="Install Ubuntu 22.04 LTS Server",
+            title="Do not install an OS, a driver, or CUDA",
             what=_plain(
-                "NVIDIA's reference platform for this hardware. DGX OS bundles drivers and "
-                "tools but is heavier and tied to NVIDIA's release cadence; plain Ubuntu LTS "
-                "stays more flexible."),
+                "A DGX Spark arrives ready: DGX OS 7 on an Ubuntu 24.04 base, driver "
+                "580-open, and CUDA 13.x already installed. This step is the whole point of "
+                "this guide, because the obvious move - follow a generic NVIDIA runbook and "
+                "apt-install a driver and CUDA - actively breaks this box. Three ways it "
+                "goes wrong: CUDA 12.x does NOT support GB10 Blackwell at all, this machine "
+                "is aarch64 so an x86_64 CUDA repo is the wrong architecture entirely, and "
+                "the shipped 580-open driver is newer than what those runbooks pin. Verify "
+                "what is already there and move on."),
+            command="nvidia-smi && nvcc --version && uname -m",
+            verify="nvidia-smi && nvcc --version && uname -m",
+            expect=_plain(
+                "GB10 listed, driver 580 or newer, CUDA release 13.x, and 'aarch64'. If CUDA "
+                "reads 12.x, you are on a box someone has already downgraded - fix that "
+                "before anything else."),
+            warnings=["do NOT follow a CUDA 12.4 / ubuntu2204 / x86_64 runbook on this "
+                      "hardware. Any of those three is enough to leave you with a toolkit "
+                      "that cannot see the GPU."],
         ),
         GuideStep(
-            title="Add NVIDIA's CUDA repository",
-            what="Points apt at NVIDIA's packages rather than the distro's older ones.",
-            command=(
-                "curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/"
-                "ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb -o /tmp/cuda-keyring.deb && "
-                "sudo dpkg -i /tmp/cuda-keyring.deb && sudo apt update"),
-            warnings=[_SUDO_WARNING],
-        ),
-        GuideStep(
-            title="Install the driver and CUDA toolkit",
-            what="Installs the proprietary driver plus the CUDA toolkit llama.cpp builds against.",
-            command="sudo apt -y install nvidia-driver-570 cuda-toolkit-12-4",
-            warnings=[_SUDO_WARNING, _REBOOT_WARNING, "downloads several GB."],
-            verify="nvidia-smi",
-            expect="a table listing the GB10 and a driver version",
-        ),
-        GuideStep(
-            title="If nvidia-smi fails, match the kernel headers",
+            title="Confirm the memory is unified before sizing anything",
             what=_plain(
-                "The usual cause is headers that do not match the running kernel, so the "
-                "driver module never built. Install the matching headers and reinstall the "
-                "driver rather than reinstalling CUDA."),
+                "GB10 shares one 128 GB pool between the Grace CPU and the Blackwell GPU. It "
+                "is not 128 GB of private VRAM. Size models against the pool MINUS what the "
+                "OS needs, exactly as on any other unified box - `deneb recommend` already "
+                "applies that headroom."),
+            command="nvidia-smi --query-gpu=name,memory.total --format=csv,noheader",
+            verify="nvidia-smi --query-gpu=name,memory.total --format=csv,noheader",
+            expect="the GB10 and roughly 128 GB, which the CPU is also living in",
+        ),
+        GuideStep(
+            title="Build llama.cpp for this GPU",
+            what=_plain(
+                "Build with the architecture detected from the machine rather than a "
+                "hard-coded compute capability. A pinned arch number from an x86 guide will "
+                "either fail to compile or silently produce a binary that runs on the CPU."),
+            command=("git clone https://github.com/ggml-org/llama.cpp && cd llama.cpp && "
+                     "cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native && "
+                     "cmake --build build --config Release -j"),
+            warnings=["compiles from source - takes several minutes."],
+            verify="./build/bin/llama-server --version",
+            expect="a version line, and CUDA listed among the backends",
+        ),
+        GuideStep(
+            title="If nvidia-smi ever fails after a kernel update",
+            what=_plain(
+                "The usual cause is headers that no longer match the running kernel, so the "
+                "driver module did not rebuild. Install the matching headers rather than "
+                "reinstalling CUDA, which is the reflex that downgrades a working box."),
             command="sudo apt -y install linux-headers-$(uname -r)",
             warnings=[_SUDO_WARNING],
         ),

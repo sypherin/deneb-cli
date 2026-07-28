@@ -148,13 +148,47 @@ def test_bios_step_carries_a_warning_and_no_command():
     assert bios[0].warnings
 
 
-def test_dgx_guide_pins_the_reference_platform():
+def test_dgx_guide_does_not_tell_you_to_install_cuda_12():
+    # This is a regression pin for advice that WAS shipped and was wrong. CUDA 12.x does not
+    # support GB10 Blackwell, the box is aarch64 so an x86_64 repo is the wrong
+    # architecture, and the machine ships with CUDA 13 already installed. Any of the three
+    # is enough to leave an operator with a toolkit that cannot see the GPU.
+    # Checked against the COMMANDS, not the prose: the guide deliberately names these in a
+    # warning telling you not to use them, and a test that banned the words outright would
+    # forbid the very explanation that prevents the mistake.
     g = pg.guide_for("dgx-spark")
-    text = "\n".join(f"{s.title} {s.what} {s.command}" for s in g.steps)
-    assert "22.04" in g.recommended_os
-    assert "nvidia-driver" in text and "cuda-toolkit" in text
+    commands = " ".join(s.command for s in g.steps)
+    for bad in ("cuda-toolkit-12", "x86_64", "ubuntu2204", "nvidia-driver-570"):
+        assert bad not in commands, f"DGX guide still tells you to run {bad!r}"
+
+    # And the warning against them must survive, since the stale runbook is still in
+    # circulation and someone will otherwise follow it.
+    prose = " ".join(f"{s.what} {' '.join(s.warnings)}" for s in g.steps).lower()
+    assert "12.4" in prose or "cuda 12" in prose
+
+
+def test_dgx_guide_says_verify_rather_than_install():
+    g = pg.guide_for("dgx-spark")
+    text = " ".join(f"{s.title} {s.what}" for s in g.steps).lower()
+    assert "do not install" in text or "do NOT reinstall".lower() in g.recommended_os.lower()
+    assert "24.04" in g.recommended_os
+    joined = " ".join(s.command for s in g.steps)
+    assert "nvidia-smi" in joined and "nvcc --version" in joined
     # The headers-mismatch recovery is the one non-obvious step; losing it costs an hour.
-    assert "linux-headers" in text
+    assert "linux-headers" in joined
+
+
+def test_dgx_build_uses_native_arch_not_a_pinned_capability():
+    g = pg.guide_for("dgx-spark")
+    joined = " ".join(s.command for s in g.steps)
+    assert "CMAKE_CUDA_ARCHITECTURES=native" in joined
+
+
+def test_dgx_guide_states_the_memory_is_unified():
+    g = pg.guide_for("dgx-spark")
+    blob = f"{g.applies_to} " + " ".join(f"{s.title} {s.what}" for s in g.steps)
+    assert "unified" in blob.lower()
+    assert "aarch64" in blob.lower() or "arm" in blob.lower()
 
 
 def test_every_sudo_step_carries_a_warning():
