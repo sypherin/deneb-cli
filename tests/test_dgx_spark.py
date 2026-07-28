@@ -96,17 +96,15 @@ def test_a_dgx_box_gets_the_dgx_guide_not_the_strix_one():
     # The Strix advice is actively wrong here: no BIOS UMA carveout, no amdgpu params.
     assert "amdgpu" not in text
     assert "uma frame buffer" not in text
-    assert "nvidia-driver" in text
+    assert "nvidia-smi" in text
 
 
-def test_dgx_guide_targets_ubuntu_not_fedora():
+def test_dgx_guide_targets_the_shipped_os_not_a_reinstall():
     guide = pg.guide_for("dgx-spark")
-    assert "22.04" in guide.recommended_os
+    # DGX Spark ships DGX OS 7 on an Ubuntu 24.04 base with CUDA 13 already present.
+    assert "24.04" in guide.recommended_os
     text = " ".join(s.command for s in guide.steps)
-    # Package commands must be apt, since NVIDIA's reference platform is Ubuntu. Telling a
-    # DGX operator to run dnf is advice that cannot execute.
-    assert "apt" in text
-    assert "dnf" not in text
+    assert "dnf" not in text, "dnf on a DGX is advice that cannot run"
 
 
 def test_ubuntu_fixture_resolves_to_the_debian_family():
