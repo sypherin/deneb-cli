@@ -50,6 +50,22 @@ _SMALL_CARVEOUT_MB = 4096
 _UNIFIED_HEADROOM_FLOOR_MB = 8192
 _UNIFIED_HEADROOM_FRACTION = 0.15
 
+# NVIDIA parts whose memory is UNIFIED (CPU and GPU share one pool), not dedicated VRAM.
+# Without this the "else -> dedicated" rule below treats a DGX Spark's 128 GB as private
+# GPU memory and hands the whole pool to a model, skipping the headroom floor entirely -
+# on a box where the OS is living in that same RAM. That is precisely the failure the floor
+# was added for after the Strix freeze; the DGX is the same shape of machine, so it needs
+# the same protection. Matched on name substrings because these report as ordinary GPUs.
+_UNIFIED_NVIDIA_MARKERS = (
+    "gb10",     # DGX Spark (GB10 Blackwell)
+    "gb200",    # Grace-Blackwell superchip
+    "gh200",    # Grace-Hopper superchip
+    "spark",    # DGX Spark, when reported by product name
+    "grace",    # Grace-based unified parts generally
+    "thor",     # Jetson Thor
+    "orin",     # Jetson Orin (unified LPDDR)
+)
+
 # PCI vendor ids for the lspci fallback path (when a vendor SMI tool is absent).
 _PCI_VENDOR = {"1002": "amd", "10de": "nvidia", "8086": "intel"}
 _MIB = 1024 * 1024
@@ -339,6 +355,11 @@ def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int]) -> MemoryClassifi
             elif (carve is not None and carve < _SMALL_CARVEOUT_MB
                   and ram_total_mb and ram_total_mb > 2 * carve):
                 unified = True
+        elif vendor == "nvidia":
+            # Most NVIDIA cards are dedicated, but the Grace/Blackwell and Jetson unified
+            # parts are not, and a DGX Spark is exactly the kind of box Deneb targets.
+            name = (gpu.name or "").lower()
+            unified = any(marker in name for marker in _UNIFIED_NVIDIA_MARKERS)
 
         if unified:
             gpu.memory_kind = "unified"
