@@ -178,36 +178,50 @@ _SURYA2 = Service(
     notes="a vision model in GGUF form, so it needs weights + mmproj and temp 0",
     steps=[
         ServiceStep(
-            title="Convert the model to GGUF",
+            title="Patch the checkpoint so the converter recognises it",
             what=_plain(
-                "Surya 2 is published as HuggingFace weights, so it is converted with "
-                "llama.cpp's own converter, then quantised. This produces the two files the "
-                "server needs: the weights and the mmproj projector. Run it on the machine "
-                "that will serve it, or on any machine - the output is portable. "
-                "NOT VERIFIED END TO END by Deneb's authors on Surya 2 specifically: this is "
-                "the standard llama.cpp vision-model conversion path, and the projector flag "
-                "name has changed between llama.cpp releases. Check "
-                "`convert_hf_to_gguf.py --help` on the version you actually have before "
-                "assuming these flags."),
-            command=("hf download datalab-to/surya-ocr-2 --local-dir ~/src/surya-2-hf && "
-                     "python3 ~/llama.cpp/convert_hf_to_gguf.py ~/src/surya-2-hf "
-                     "--outfile ~/models/surya-2/surya-2-f16.gguf --outtype f16 && "
-                     "python3 ~/llama.cpp/convert_hf_to_gguf.py ~/src/surya-2-hf "
-                     "--mmproj --outfile ~/models/surya-2/surya-2-mmproj.gguf"),
+                "This is the step that is not in anyone's documentation, and the one that "
+                "makes the rest work. Surya 2 is a ~630M vision model built on a Qwen3.5 "
+                "backbone with a Qwen3-VL-style vision merger, but its published config "
+                "does not name an architecture llama.cpp's converter accepts, so a "
+                "straight conversion fails. The checkpoint has to be patched to declare the "
+                "architecture the converter knows before anything else will run. A working "
+                "build's own metadata records exactly this - it reports "
+                "architecture 'qwen35', a 'qwen3vl_merger' projector, and a model name of "
+                "'_Patched_Ckpt' - which is the fingerprint of a patched config, not a "
+                "vanilla one."),
+            command=("hf download datalab-to/surya-ocr-2 --local-dir ~/src/surya-2-hf\n"
+                     "# then, in ~/src/surya-2-hf/config.json, make the architecture one the\n"
+                     "# converter supports (the working build reports qwen35 + a\n"
+                     "# qwen3vl_merger projector). Compare against a Qwen3-VL config and\n"
+                     "# align the fields the converter reads."),
             warnings=[_BIG_DOWNLOAD,
-                      "conversion is memory-hungry - on a shared box run it when nothing "
-                      "else large is resident.",
-                      "flags vary by llama.cpp version; verify against --help first."],
+                      "the exact edit depends on the converter version you have - check "
+                      "which architectures it accepts before guessing at the value."],
         ),
         ServiceStep(
-            title="Quantise it",
+            title="Convert to GGUF, weights and projector",
             what=_plain(
-                "The f16 output is larger than it needs to be for OCR. Q4_K_M keeps quality "
-                "for this task at a fraction of the size."),
-            command=("~/llama.cpp/build/bin/llama-quantize "
-                     "~/models/surya-2/surya-2-f16.gguf ~/models/surya-2/surya-2.gguf Q4_K_M"),
-            warnings=["write to a .partial name and move it into place only on success, so "
-                      "a failed run cannot leave a truncated model that loads and misbehaves."],
+                "Two outputs from the patched checkpoint: the model and the mmproj vision "
+                "projector. Both are needed; the server loads without the projector and "
+                "then silently cannot see images."),
+            command=("python3 ~/llama.cpp/convert_hf_to_gguf.py ~/src/surya-2-hf "
+                     "--outfile ~/models/surya-2/surya-2.gguf.partial --outtype f16 && "
+                     "mv ~/models/surya-2/surya-2.gguf.partial ~/models/surya-2/surya-2.gguf\n"
+                     "python3 ~/llama.cpp/convert_hf_to_gguf.py ~/src/surya-2-hf --mmproj "
+                     "--outfile ~/models/surya-2/surya-2-mmproj.gguf.partial && "
+                     "mv ~/models/surya-2/surya-2-mmproj.gguf.partial "
+                     "~/models/surya-2/surya-2-mmproj.gguf"),
+            warnings=["conversion is memory-hungry - on a box that is also serving models, "
+                      "run it when nothing else large is resident.",
+                      "writing to .partial and moving on success means a failed run cannot "
+                      "leave a truncated model that loads and then misbehaves."],
+            verify="ls -la ~/models/surya-2/",
+            expect=_plain(
+                "roughly 1.2 GB of weights and 200 MB of projector. Keep them at f16: a "
+                "working deployment runs this model unquantised, and at 630M parameters "
+                "there is little to save and accuracy to lose. OCR errors are silent - a "
+                "wrong character looks exactly like a right one."),
         ),
         ServiceStep(
             title="Serve it",
@@ -324,3 +338,43 @@ def resolve_service(name) -> "Service | None":
 def stack_services() -> list:
     """The full stack, in the order it must be brought up."""
     return [SERVICES[k] for k in STACK_ORDER if k in SERVICES]
+
+
+# ── platform caveats ──────────────────────────────────────────────────────────
+# The llama-server commands above are portable: a GGUF is a GGUF and the flags are the
+# same whichever accelerator built the binary. What is NOT portable is everything around
+# them, and the differences are the kind that only surface once someone is standing at the
+# machine.
+
+_PLATFORM_NOTES = {
+    "dgx-spark": [
+        _plain(
+            "Build llama.cpp with CUDA first, or every service here silently runs on the "
+            "CPU. `deneb guide dgx-spark` covers it - and note that box ships with CUDA "
+            "already installed, so do not install a toolkit."),
+        _plain(
+            "This machine is aarch64. GGUF models are architecture-independent and carry "
+            "over unchanged, but CONTAINER images do not: an x86-only image will either "
+            "refuse to run or fall into emulation and be unusably slow. That makes Surya 2 "
+            "(GGUF under llama-server) the sound OCR choice here, and Surya 1 (container) "
+            "the one to check an arm64 image exists for before committing to it."),
+        _plain(
+            "Memory is unified - the 128 GB is shared with the OS, not private VRAM. Size "
+            "the three services against the pool TOGETHER: they are resident at the same "
+            "time, and it is their combined footprint that has to fit, not each in turn."),
+    ],
+    "strix-halo": [
+        _plain(
+            "Build llama.cpp against ROCm or Vulkan first - `deneb guide strix-halo` covers "
+            "the kernel, BIOS and boot-parameter work that has to happen before any of it "
+            "is stable under sustained load."),
+        _plain(
+            "Memory is unified. Size the three services against the pool together, not one "
+            "at a time - they are all resident at once."),
+    ],
+}
+
+
+def platform_notes(platform_key: str) -> list:
+    """Caveats that apply to running the whole stack on a given platform. [] when unknown."""
+    return list(_PLATFORM_NOTES.get(str(platform_key or "").strip().lower(), []))

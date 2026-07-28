@@ -117,14 +117,33 @@ def test_llm_keeps_its_speculative_draft_model():
     assert "-md " in commands, "the draft model is what makes speculative decoding work"
 
 
-def test_surya2_conversion_admits_it_is_unverified():
-    # Deneb's authors have not run this specific conversion end to end, and the converter's
-    # flags move between llama.cpp releases. Saying so is the difference between advice and
-    # a confident guess.
-    conv = [s for s in sv.SERVICES["surya2"].steps if "convert_hf_to_gguf" in s.command]
-    assert conv, "the conversion step vanished"
-    blob = f"{conv[0].what} {' '.join(conv[0].warnings)}".lower()
-    assert "not verified" in blob or "verify" in blob
+def test_surya2_build_keeps_the_patch_step():
+    # Recovered from a working build's own GGUF metadata: it reports architecture "qwen35",
+    # a "qwen3vl_merger" projector and the model name "_Patched_Ckpt". That name is the
+    # fingerprint of a patched config. Without the patch the converter rejects the
+    # checkpoint outright, so this step is the whole build - and it is the one no
+    # documentation mentions.
+    blob = " ".join(f"{s.title} {s.what}" for s in sv.SERVICES["surya2"].steps).lower()
+    assert "patch" in blob
+    assert "qwen35" in blob and "qwen3vl_merger" in blob
+
+
+def test_surya2_is_not_quantised():
+    # The deployed model is f16 (GGUF file_type 1). An earlier version of this advice told
+    # people to quantise to Q4_K_M, which is not what runs - and on a 630M OCR model the
+    # saving is trivial while the accuracy loss is silent.
+    steps = sv.SERVICES["surya2"].steps
+    commands = " ".join(s.command for s in steps)
+    assert "llama-quantize" not in commands
+    assert "f16" in commands.lower()
+    blob = " ".join(f"{s.what} {s.expect}" for s in steps).lower()
+    assert "unquantised" in blob or "f16" in blob
+
+
+def test_surya2_conversion_writes_partial_then_moves():
+    # A truncated GGUF still loads and then misbehaves, which is the worst failure shape.
+    commands = " ".join(s.command for s in sv.SERVICES["surya2"].steps)
+    assert ".partial" in commands and "mv " in commands
 
 
 def test_surya_cutover_requires_a_comparison_first():
@@ -162,3 +181,35 @@ def test_no_em_dashes_in_generated_copy():
         blob = f"{svc.label}{svc.role}{svc.notes}" + " ".join(
             f"{s.title}{s.what}{s.expect}{' '.join(s.warnings)}" for s in svc.steps)
         assert "—" not in blob and "–" not in blob, f"{key} contains an em/en dash"
+
+
+# ── platform caveats ──────────────────────────────────────────────────────────
+def test_dgx_is_warned_that_container_images_are_arch_specific():
+    # GGUFs carry over to aarch64 unchanged; container images do not. An x86-only image
+    # either refuses to run or drops into emulation and is unusably slow - and that is only
+    # discovered at the machine.
+    notes = " ".join(sv.platform_notes("dgx-spark")).lower()
+    assert "aarch64" in notes
+    assert "container" in notes
+    assert "surya 2" in notes, "the GGUF OCR path is the sound one on this arch"
+
+
+def test_dgx_notes_say_build_cuda_first():
+    notes = " ".join(sv.platform_notes("dgx-spark")).lower()
+    assert "cuda" in notes
+    # And must not contradict the corrected guide by implying a toolkit install.
+    assert "do not install a toolkit" in notes
+
+
+def test_both_platforms_warn_about_shared_memory_across_all_three_services():
+    # The three services are resident simultaneously. Sizing them one at a time is how a
+    # box ends up thrashing with every individual model "fitting".
+    for key in ("dgx-spark", "strix-halo"):
+        notes = " ".join(sv.platform_notes(key)).lower()
+        assert "unified" in notes
+        assert "together" in notes or "combined" in notes
+
+
+def test_unknown_platform_yields_no_invented_caveats():
+    assert sv.platform_notes("") == []
+    assert sv.platform_notes("some-other-box") == []
