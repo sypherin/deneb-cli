@@ -150,3 +150,14 @@ pipx uninstall deneb
 *Built by Altronis. The intelligence — the Neo runbook + safety guardrails — lives in
 your private Neo cloud; this client is open source, so you (or your client) can read
 every line of what it does on the box.*
+
+## Restore kit
+
+`restore-kit/` carries the field-tested recovery pieces for a Neo stack box
+(born from a real DGX Spark rescue): the Surya `/layout` server (`server.py`),
+the hardened auth gateway (`gateway.ts` — header passthrough, `/embed` route,
+`/upstreams/health` scorecard, duplicate-slash tolerance), a 2-minute stack
+guard (`spark-stack-guard.*` — enable + restart + health-probe every service,
+survives reboots), and `RESTORE.md` with the step-by-step procedures. Deneb's
+engine serves the same files as token-gated artifacts, and its knowledge base
+carries each failure as a solved case.
