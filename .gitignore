@@ -11,3 +11,4 @@ PLAN.md
 eval/
 *.log
 .deneb_token
+restore-kit/

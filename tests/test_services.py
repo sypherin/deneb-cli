@@ -247,8 +247,17 @@ def test_surya1_contract_is_described_without_naming_any_deployment():
     # product or project name.
     blob = " ".join(f"{s.title} {s.what} {s.command}" for s in sv.SERVICES["surya"].steps).lower()
     assert "/healthz" in blob and "/layout" in blob
-    for forbidden in ("cf-platform", "cf_platform", "docflow", "chong"):
-        assert forbidden not in blob
+    # The real client / product / project terms to guard live in an env var so they are
+    # NOT published in this open repo (the public default below is generic placeholders).
+    # Locally, set DENEB_FORBIDDEN_TERMS="term1,term2,..." to assert against the real ones.
+    import os
+    forbidden = os.environ.get(
+        "DENEB_FORBIDDEN_TERMS", "acme-corp,example_project,widgetflow"
+    ).split(",")
+    for term in forbidden:
+        term = term.strip().lower()
+        if term:
+            assert term not in blob
 
 
 # ── download and serve must agree ─────────────────────────────────────────────

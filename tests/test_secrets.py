@@ -10,18 +10,19 @@ from deneb import tools  # noqa: E402
 def main() -> int:
     fails = []
 
-    # 1. Redaction of secret-looking tokens in any output.
+    # 1. Redaction of secret-looking tokens in any output. All fixtures below are
+    #    FABRICATED (deadbeef… / obvious placeholders) - never paste a real token here.
     samples = [
-        "Bearer sk-altronis-49ef76b9402920aad107ebe9d7d8c7982372ee1a71e89dc6",
+        "Bearer sk-altronis-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         'api_key = "abcd1234efgh5678ijkl"',
         "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
-        "hash 49ef76b9402920aad107ebe9d7d8c7982372ee1a71e89dc6",
+        "hash deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         "password=hunter2supersecret",
     ]
     for s in samples:
         r = tools._redact(s)
         # the long secret body must be gone
-        if "49ef76b9402920aad107ebe9d7d8c7982372ee1a" in r or "ghp_ABCDEFGHIJKLMNOPQRST" in r \
+        if "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" in r or "ghp_ABCDEFGHIJKLMNOPQRST" in r \
            or "abcd1234efgh5678ijkl" in r or "hunter2supersecret" in r:
             fails.append(("NOT redacted", s, r))
 
@@ -29,9 +30,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         kp = os.path.join(d, "keys.json")
         with open(kp, "w") as f:
-            f.write('{"default":"sk-altronis-49ef76b9402920aad107ebe9d7d8c7982372ee1a71e89dc6"}')
+            f.write('{"default":"sk-altronis-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}')
         out = tools.read_file(kp)["output"]
-        if "sk-altronis-49ef7" in out or "49ef76b9402920aad107" in out:
+        if "sk-altronis-deadb" in out or "deadbeefdeadbeefdead" in out:
             fails.append(("secrets file content leaked", kp, out))
         if "does not read secret values" not in out:
             fails.append(("secrets file not guarded", kp, out))
