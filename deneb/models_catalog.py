@@ -90,8 +90,31 @@ CATALOG = [
           "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF"),
     Model("Qwen3.6-35B-A3B", 35, "moe", 3, ["coding", "chat", "general"],
           _quants({"Q4_K_M": 21500, "Q5_K_M": 25000, "Q8_0": 37500}),
-          "Qwen/Qwen3-30B-A3B-GGUF",
-          notes="MoE: 35B total, ~3B active experts — fast tok/s for its size."),
+          "unsloth/Qwen3.6-35B-A3B-GGUF",
+          notes="MoE: 35B total, ~3B active experts, fast tok/s for its size. MTP variant "
+                "unsloth/Qwen3.6-35B-A3B-MTP-GGUF decodes faster via a speculative draft."),
+    # ── Altronis current stack (refreshed 2026-08-24; repo ids HF-checked) ──
+    Model("Qwen3.6-27B", 27, "dense", None, ["coding", "chat", "general"],
+          _quants({"Q4_K_M": 17000, "Q5_K_M": 19800, "Q8_0": 29000}),
+          "unsloth/Qwen3.6-27B-GGUF",
+          notes="Dense 27B, single-GPU friendly, strong coding. MTP variant: "
+                "unsloth/Qwen3.6-27B-MTP-GGUF for faster decode."),
+    Model("Qwen3.8-27B", 27, "dense", None, ["vision", "chat", "general"],
+          _quants({"Q4_K_M": 18000, "Q5_K_M": 21000, "Q8_0": 29500}),
+          "unsloth/Qwen3.8-27B-GGUF",
+          notes="Dense 27B with NATIVE vision (text + images in one model), so it can serve as "
+                "the VLM without a separate vision model. Vision needs its mmproj projector GGUF "
+                "alongside the weights."),
+    Model("Gemma-4-26B-A4B-it", 26, "moe", 4, ["vision", "chat", "general"],
+          _quants({"Q4_K_M": 16500, "Q5_K_M": 19000, "Q8_0": 28000}),
+          "unsloth/gemma-4-26B-A4B-it-GGUF",
+          notes="MoE: 26B total, ~4B active. Multimodal (vision). Official QAT repo: "
+                "google/gemma-4-26B-A4B-it-qat-q4_0-gguf. MTP sidecar available for faster decode."),
+    Model("Qwen3-VL-32B-Instruct", 32, "dense", None, ["vision", "chat", "general"],
+          _quants({"Q4_K_M": 20500, "Q5_K_M": 24000, "Q8_0": 34500}),
+          "unsloth/Qwen3-VL-32B-Instruct-GGUF",
+          notes="Dedicated vision model (VLM). Needs its mmproj-F16.gguf projector alongside the "
+                "main weights. Alternative: Qwen3.8-27B serves vision in one unified model."),
     Model("Llama-3.2-3B-Instruct", 3, "dense", None, ["chat", "general"],
           _quants({"Q4_K_M": 2100, "Q5_K_M": 2400, "Q8_0": 3500}),
           "bartowski/Llama-3.2-3B-Instruct-GGUF"),

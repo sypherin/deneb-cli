@@ -109,7 +109,9 @@ _VLM = Service(
     label="Qwen3-VL 32B (vision LLM)",
     role="images in, text out - screenshots, diagrams, photographed documents",
     port=8080,
-    notes="needs an mmproj projector file alongside the weights, or images are ignored",
+    notes=("needs an mmproj projector file alongside the weights, or images are ignored. "
+           "Alternative: if the main LLM is Qwen3.8-27B, it has native vision and doubles as "
+           "the VLM, so this separate vision service is not needed."),
     steps=[
         ServiceStep(
             title="Fetch the weights AND the projector",
@@ -209,7 +211,11 @@ _SURYA2 = Service(
     label="Surya 2 (OCR, GGUF under llama.cpp)",
     role="OCR successor - runs on llama-server like any other vision model",
     port=8093,
-    notes="a vision model in GGUF form, so it needs weights + mmproj and temp 0",
+    notes=("a vision model in GGUF form, so it needs weights + mmproj and temp 0. "
+           "KNOWN UPSTREAM BUG (datalab-to/surya #542): serving Surya 2 GGUF under the "
+           "llama.cpp backend can fail immediately with a grammar-parse error on the bbox "
+           "schema. If you hit it, use the vllm backend (NVIDIA GPU) for Surya 2, or stay on "
+           "Surya 1, until it is fixed upstream."),
     steps=[
         ServiceStep(
             title="Patch the checkpoint so the converter recognises it",
