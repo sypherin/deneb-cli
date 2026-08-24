@@ -10,7 +10,8 @@ from deneb import tools  # noqa: E402
 def main() -> int:
     fails = []
 
-    # 1. Redaction of secret-looking tokens in any output.
+    # 1. Redaction of secret-looking tokens in any output. All fixtures below are
+    #    FABRICATED (deadbeef… / obvious placeholders) - never paste a real token here.
     samples = [
         "Bearer sk-altronis-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         'api_key = "abcd1234efgh5678ijkl"',
