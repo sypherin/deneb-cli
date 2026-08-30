@@ -121,6 +121,25 @@ def _fit_cell(fr) -> str:
     return f"✓ ~{int(round(headroom / 1024))} GB free"
 
 
+def _tokenmark_hw_hint(p):
+    """Best-guess TokenMark hardware string from the detected profile, or None."""
+    parts = [getattr(p, "cpu_model", "") or ""]
+    for g in (getattr(p, "gpus", None) or []):
+        parts.append(f"{getattr(g, 'vendor', '') or ''} {getattr(g, 'name', '') or ''}")
+    blob = " ".join(parts).lower()
+    if any(k in blob for k in ("strix", "ryzen ai max", "gfx1151", "8060s", "395")):
+        return "Strix Halo"
+    if any(k in blob for k in ("dgx", "gb10", "grace")) or "spark" in blob:
+        return "DGX Spark"
+    if "5090" in blob:
+        return "RTX 5090"
+    if "6000" in blob and "pro" in blob:
+        return "RTX PRO 6000"
+    if "4090" in blob:
+        return "RTX 4090"
+    return None
+
+
 def cmd_recommend(argv=None) -> int:
     """`deneb recommend [--use coding|vision|chat|general]` — read this box, rank the model
     catalog for the use-case, and print a table + a next-step pointer. Local, deterministic,
@@ -154,6 +173,30 @@ def cmd_recommend(argv=None) -> int:
         print(f"  {_C['teal']}{i:<2}{_C['z']} {_C['b']}{name:<30}{_C['z']} "
               f"{qname:<7} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9}")
         print(f"     {_C['d']}why: {r.why}{_C['z']}")
+
+    # Opt-in real numbers from TokenMark (community-measured tok/s). Default stays
+    # KEYLESS/offline (the Deneb Rule); --measured adds one network call, fail-soft.
+    if "--measured" in argv or "--tokenmark" in argv:
+        from . import tokenmark
+        hw_hint = _tokenmark_hw_hint(p)
+        any_measured = False
+        lines = []
+        for r in recs:
+            name = getattr(r.model, "name", "") or ""
+            rows = tokenmark.measured_for_model(name, hardware=hw_hint)
+            if rows:
+                any_measured = True
+                b = rows[0]
+                hw = b.get("hardwareLabel") or b.get("hardware") or "?"
+                lines.append(f"    {name}: {_C['g']}{b.get('decode_tps')} tok/s{_C['z']} "
+                             f"{_C['d']}({b.get('quant') or '?'}, {hw}, src {b.get('author') or '?'}){_C['z']}")
+        if any_measured:
+            print(f"\n  {_C['b']}measured on TokenMark{_C['z']} {_C['d']}"
+                  f"(real community benchmarks{f', {hw_hint}' if hw_hint else ''}):{_C['z']}")
+            print("\n".join(lines))
+        else:
+            print(f"\n  {_C['d']}(no TokenMark measurements matched — site unreachable or "
+                  f"no data for these models yet){_C['z']}")
 
     top = recs[0]
     if not getattr(top.fit, "fits", False):
