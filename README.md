@@ -84,10 +84,23 @@ failing, ask `deneb "why is <that> failing"` for a deeper look.
 Two more **keyless, deterministic** commands (no LLM, no token) read your box and advise:
 
 ```sh
-deneb profile                          # structured hardware profile (os/cpu/ram/gpu/budget)
-deneb recommend --use coding           # rank the local-model catalog for THIS box + use-case
-deneb setup Qwen3.6-35B-A3B            # print the platform-correct setup steps for a model
+deneb profile                          # hardware profile + which hardware class it is
+deneb recommend --use coding           # rank current models for THIS box, with est. tok/s
+deneb recommend --use coding --measured  # add real community tok/s from TokenMark
+deneb catalog [--refresh]              # the models Deneb ranks, real per-quant sizes
+deneb setup Qwen3.8-Flash-Next         # print the platform-correct setup steps for a model
 ```
+
+**The model list keeps itself current.** Deneb ships a hand-picked watchlist of current local
+models and reads each one's real per-quant file sizes and parameter counts from Hugging
+Face (`deneb catalog --refresh`, keyless). Nothing about a model's size is typed in by hand.
+
+**Speeds are estimates from your hardware, not guesses.** Deneb recognises 35 hardware
+classes (RTX 30/40/50, RTX PRO / Ada / A6000, L40S, A100/H100/H200/B200, DGX Spark,
+Jetson Thor, Strix Halo, Radeon, Instinct, Intel Arc, Apple M1 to M4) and estimates
+single-user decode speed from memory bandwidth and the model's active parameters. The
+estimate is checked against real TokenMark measurements in the test suite. Speculative
+decoding (MTP, draft models) typically adds 1.5 to 2.5x on top.
 
 `deneb setup <model>` is **tell-only**: it reads your box, resolves the model, and prints
 the ordered, platform-branched steps — stand up the runtime (CUDA / ROCm / Metal / CPU),

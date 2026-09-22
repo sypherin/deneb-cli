@@ -1,0 +1,852 @@
+{
+ "schema": 1,
+ "generated": "2026-09-23T05:02+08:00",
+ "models": [
+  {
+   "name": "Qwen3.8-27B",
+   "params_b": 27.3,
+   "architecture": "dense",
+   "active_params_b": null,
+   "capabilities": [
+    "coding",
+    "vision",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Qwen3.8-27B-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 9829,
+     "bpw": 2.88
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 13146,
+     "bpw": 3.85
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 14253,
+     "bpw": 4.17
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 17559,
+     "bpw": 5.14
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 20877,
+     "bpw": 6.11
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 25299,
+     "bpw": 7.41
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 29047,
+     "bpw": 8.51
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 31458,
+     "bpw": 9.21
+    }
+   ],
+   "notes": "Dense 27B with native vision (needs the mmproj file). Strong all-rounder that fits one 24-32 GB GPU at 4-bit.",
+   "source": "https://huggingface.co/Qwen/Qwen3.8-27B",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3.8-Flash-Next",
+   "params_b": 176.9,
+   "architecture": "moe",
+   "active_params_b": 6,
+   "capabilities": [
+    "coding",
+    "vision",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 78869,
+     "bpw": 3.57
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 89986,
+     "bpw": 4.07
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 93683,
+     "bpw": 4.24
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 111335,
+     "bpw": 5.03
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 158286,
+     "bpw": 7.16
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 169165,
+     "bpw": 7.65
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 188225,
+     "bpw": 8.51
+    }
+   ],
+   "notes": "MoE, ~6B active of 125B plus 51B n-gram embedding. Native vision (mmproj). MTP draft files in the repo's MTP/ folder speed up decode.",
+   "source": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "GLM-5.3-Flash",
+   "params_b": 320.8,
+   "architecture": "moe",
+   "active_params_b": 18,
+   "capabilities": [
+    "coding",
+    "chat",
+    "general",
+    "vision"
+   ],
+   "gguf_repo": "unsloth/GLM-5.3-Flash-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 108720,
+     "bpw": 2.71
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 147536,
+     "bpw": 3.68
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 156822,
+     "bpw": 3.91
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 199707,
+     "bpw": 4.98
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 240306,
+     "bpw": 5.99
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 291833,
+     "bpw": 7.28
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 340982,
+     "bpw": 8.5
+    }
+   ],
+   "notes": "MoE, 320B total, 18B active. Needs 128 GB+ even at 2-bit.",
+   "source": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "gpt-oss-120b",
+   "params_b": 116.8,
+   "architecture": "moe",
+   "active_params_b": 5.1,
+   "capabilities": [
+    "coding",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/gpt-oss-120b-GGUF",
+   "mmproj": false,
+   "quants": [
+    {
+     "name": "Q4_K_M",
+     "size_mb": 62769,
+     "bpw": 4.3
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 62890,
+     "bpw": 4.31
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 63016,
+     "bpw": 4.32
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 63284,
+     "bpw": 4.33
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 63284,
+     "bpw": 4.33
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 63387,
+     "bpw": 4.34
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 64473,
+     "bpw": 4.41
+    }
+   ],
+   "notes": "MoE, 117B total, 5.1B active. Ships natively in MXFP4, so every GGUF quant is about the same size: take the native one.",
+   "source": "https://huggingface.co/openai/gpt-oss-120b",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "gpt-oss-20b",
+   "params_b": 20.9,
+   "architecture": "moe",
+   "active_params_b": 3.6,
+   "capabilities": [
+    "coding",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/gpt-oss-20b-GGUF",
+   "mmproj": false,
+   "quants": [
+    {
+     "name": "Q4_K_M",
+     "size_mb": 11625,
+     "bpw": 4.45
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 11717,
+     "bpw": 4.48
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 11872,
+     "bpw": 4.54
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 12041,
+     "bpw": 4.61
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 12041,
+     "bpw": 4.61
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 12110,
+     "bpw": 4.63
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 13195,
+     "bpw": 5.05
+    }
+   ],
+   "notes": "MoE, 21B total, 3.6B active. Native MXFP4, fits a 16 GB GPU.",
+   "source": "https://huggingface.co/openai/gpt-oss-20b",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3-Coder-Next",
+   "params_b": 79.7,
+   "architecture": "moe",
+   "active_params_b": 3,
+   "capabilities": [
+    "coding",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Qwen3-Coder-Next-GGUF",
+   "mmproj": false,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 26761,
+     "bpw": 2.69
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 36283,
+     "bpw": 3.64
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 38429,
+     "bpw": 3.86
+    },
+    {
+     "name": "IQ4_XS",
+     "size_mb": 42676,
+     "bpw": 4.29
+    },
+    {
+     "name": "MXFP4",
+     "size_mb": 48034,
+     "bpw": 4.82
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 48528,
+     "bpw": 4.87
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 49608,
+     "bpw": 4.98
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 56848,
+     "bpw": 5.71
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 59541,
+     "bpw": 5.98
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 65614,
+     "bpw": 6.59
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 73119,
+     "bpw": 7.34
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 84812,
+     "bpw": 8.52
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 86349,
+     "bpw": 8.67
+    }
+   ],
+   "notes": "MoE, 80B total, 3B active. Coding agent model.",
+   "source": "https://huggingface.co/Qwen/Qwen3-Coder-Next",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3-Coder-30B-A3B-Instruct",
+   "params_b": 30.5,
+   "architecture": "moe",
+   "active_params_b": 3.3,
+   "capabilities": [
+    "coding",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+   "mmproj": false,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 11789,
+     "bpw": 3.09
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 13806,
+     "bpw": 3.62
+    },
+    {
+     "name": "IQ4_XS",
+     "size_mb": 16378,
+     "bpw": 4.29
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 17665,
+     "bpw": 4.63
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 18557,
+     "bpw": 4.86
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 21726,
+     "bpw": 5.69
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 21740,
+     "bpw": 5.7
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 25093,
+     "bpw": 6.57
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 26340,
+     "bpw": 6.9
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 32484,
+     "bpw": 8.51
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 35990,
+     "bpw": 9.43
+    }
+   ],
+   "notes": "MoE, 30.5B total, 3.3B active. Very fast coder for 24 GB GPUs and unified-memory boxes.",
+   "source": "https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3.6-35B-A3B",
+   "params_b": 34.7,
+   "architecture": "moe",
+   "active_params_b": 3,
+   "capabilities": [
+    "coding",
+    "vision",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 12291,
+     "bpw": 2.84
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 16846,
+     "bpw": 3.89
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 17731,
+     "bpw": 4.09
+    },
+    {
+     "name": "MXFP4",
+     "size_mb": 21706,
+     "bpw": 5.01
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 22360,
+     "bpw": 5.16
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 26593,
+     "bpw": 6.14
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 31844,
+     "bpw": 7.35
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 36903,
+     "bpw": 8.52
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 38451,
+     "bpw": 8.87
+    }
+   ],
+   "notes": "MoE, 35B total, ~3B active. MTP variant unsloth/Qwen3.6-35B-A3B-MTP-GGUF decodes faster.",
+   "source": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Gemma-4-26B-A4B-it",
+   "params_b": 25.2,
+   "architecture": "moe",
+   "active_params_b": 3.8,
+   "capabilities": [
+    "vision",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 10547,
+     "bpw": 3.34
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 12907,
+     "bpw": 4.09
+    },
+    {
+     "name": "UD-IQ4_XS",
+     "size_mb": 13597,
+     "bpw": 4.31
+    },
+    {
+     "name": "MXFP4",
+     "size_mb": 16551,
+     "bpw": 5.25
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 17011,
+     "bpw": 5.39
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 21218,
+     "bpw": 6.73
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 23295,
+     "bpw": 7.39
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 26860,
+     "bpw": 8.52
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 27636,
+     "bpw": 8.76
+    }
+   ],
+   "notes": "MoE, 25.2B total, 3.8B active. Multimodal (mmproj). QAT build: unsloth/gemma-4-26B-A4B-it-qat-GGUF.",
+   "source": "https://huggingface.co/google/gemma-4-26B-A4B-it",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Nemotron-3-Nano-30B-A3B",
+   "params_b": 31.6,
+   "architecture": "moe",
+   "active_params_b": 3.5,
+   "capabilities": [
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
+   "mmproj": false,
+   "quants": [
+    {
+     "name": "IQ4_XS",
+     "size_mb": 18169,
+     "bpw": 4.6
+    },
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 19920,
+     "bpw": 5.05
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 19939,
+     "bpw": 5.05
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 22834,
+     "bpw": 5.78
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 24574,
+     "bpw": 6.23
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 26149,
+     "bpw": 6.62
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 27506,
+     "bpw": 6.97
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 33508,
+     "bpw": 8.49
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 33508,
+     "bpw": 8.49
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 33585,
+     "bpw": 8.51
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 40448,
+     "bpw": 10.25
+    }
+   ],
+   "notes": "Hybrid Mamba MoE, 30B total, 3.5B active, 1M context.",
+   "source": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Gemma-4-E4B-it",
+   "params_b": 7.5,
+   "architecture": "dense",
+   "active_params_b": null,
+   "capabilities": [
+    "vision",
+    "chat",
+    "general"
+   ],
+   "gguf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 3757,
+     "bpw": 4.0
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 4588,
+     "bpw": 4.88
+    },
+    {
+     "name": "IQ4_XS",
+     "size_mb": 4715,
+     "bpw": 5.02
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 4977,
+     "bpw": 5.3
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 5126,
+     "bpw": 5.45
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 5482,
+     "bpw": 5.83
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 6656,
+     "bpw": 7.08
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 7075,
+     "bpw": 7.53
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 7458,
+     "bpw": 7.94
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 8193,
+     "bpw": 8.72
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 8712,
+     "bpw": 9.27
+    }
+   ],
+   "notes": "Small multimodal model for laptops and 8 GB GPUs (mmproj for vision).",
+   "source": "https://huggingface.co/google/gemma-4-E4B-it",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3.5-9B",
+   "params_b": 9.0,
+   "architecture": "dense",
+   "active_params_b": null,
+   "capabilities": [
+    "chat",
+    "general",
+    "vision"
+   ],
+   "gguf_repo": "unsloth/Qwen3.5-9B-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 4122,
+     "bpw": 3.68
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 5054,
+     "bpw": 4.52
+    },
+    {
+     "name": "IQ4_XS",
+     "size_mb": 5169,
+     "bpw": 4.62
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 5681,
+     "bpw": 5.08
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 5966,
+     "bpw": 5.33
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 6578,
+     "bpw": 5.88
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 6744,
+     "bpw": 6.03
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 7458,
+     "bpw": 6.66
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 8757,
+     "bpw": 7.82
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 9528,
+     "bpw": 8.51
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 12974,
+     "bpw": 11.59
+    }
+   ],
+   "notes": "Small dense model for 8-12 GB GPUs.",
+   "source": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
+   "fetched": "2026-09-23T05:02+08:00"
+  },
+  {
+   "name": "Qwen3.5-4B",
+   "params_b": 4.2,
+   "architecture": "dense",
+   "active_params_b": null,
+   "capabilities": [
+    "chat",
+    "general",
+    "vision"
+   ],
+   "gguf_repo": "unsloth/Qwen3.5-4B-GGUF",
+   "mmproj": true,
+   "quants": [
+    {
+     "name": "UD-Q2_K_XL",
+     "size_mb": 1941,
+     "bpw": 3.69
+    },
+    {
+     "name": "UD-Q3_K_XL",
+     "size_mb": 2436,
+     "bpw": 4.63
+    },
+    {
+     "name": "IQ4_XS",
+     "size_mb": 2477,
+     "bpw": 4.71
+    },
+    {
+     "name": "Q4_K_M",
+     "size_mb": 2741,
+     "bpw": 5.21
+    },
+    {
+     "name": "UD-Q4_K_XL",
+     "size_mb": 2912,
+     "bpw": 5.54
+    },
+    {
+     "name": "Q5_K_M",
+     "size_mb": 3144,
+     "bpw": 5.98
+    },
+    {
+     "name": "UD-Q5_K_XL",
+     "size_mb": 3251,
+     "bpw": 6.18
+    },
+    {
+     "name": "Q6_K",
+     "size_mb": 3526,
+     "bpw": 6.71
+    },
+    {
+     "name": "UD-Q6_K_XL",
+     "size_mb": 4146,
+     "bpw": 7.89
+    },
+    {
+     "name": "Q8_0",
+     "size_mb": 4482,
+     "bpw": 8.53
+    },
+    {
+     "name": "UD-Q8_K_XL",
+     "size_mb": 5952,
+     "bpw": 11.32
+    }
+   ],
+   "notes": "Tiny dense model for CPU-only boxes and 6 GB GPUs.",
+   "source": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
+   "fetched": "2026-09-23T05:02+08:00"
+  }
+ ],
+ "errors": []
+}

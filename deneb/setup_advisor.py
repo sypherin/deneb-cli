@@ -159,15 +159,15 @@ def _norm_key(name) -> str:
     return key
 
 
-def resolve_model(name) -> "Model | None":
-    """Match `name` against CATALOG case- and separator-insensitively; return the Model on a
-    match, None on no match (or empty/None input). PURE, never raises. (Plan 03-02's CLI turns
-    None into a helpful error + a `deneb recommend` pointer.)"""
+def resolve_model(name, catalog=None) -> "Model | None":
+    """Match `name` against the catalog (default: the static CATALOG; the CLI passes
+    hf_catalog.all_models()) case- and separator-insensitively; return the Model on a
+    match, None on no match (or empty/None input). Never raises."""
     try:
         target = _norm_key(name)
         if not target:
             return None
-        for m in CATALOG:
+        for m in (CATALOG if catalog is None else catalog):
             if _norm_key(getattr(m, "name", "")) == target:
                 return m
         return None
@@ -266,12 +266,21 @@ def _runtime_steps(pb: "Playbook") -> list:
     return steps
 
 
+def _weights_glob(basename: str, qname: str) -> str:
+    """Shell expression for the FIRST weights file of exactly this quant: the single file or
+    shard 00001 (llama.cpp loads the other shards itself), in the repo root or its quant
+    subfolder. Exact-token match so Q6_K never picks up UD-Q6_K_XL, and MTP draft heads
+    are skipped."""
+    return (f'"$(find ~/models/{basename} -not -path \'*/MTP/*\' \\( -name \'*-{qname}.gguf\' '
+            f'-o -name \'*-{qname}-00001-of-*.gguf\' \\) | sort | head -1)"')
+
+
 def _run_step(pb: "Playbook", profile, basename: str, qname: str,
               vision: bool, under_spec: bool) -> Step:
     """The llama-server RUN step: platform-branched flags, mmproj on vision, always bound to
     127.0.0.1 (never 0.0.0.0 - exposure is out of scope for v1). SET-03 service warning +
     the gfx1151 Strix caveat on rocm + the under-spec warning when it applies."""
-    parts = ["llama-server", "-m", f"~/models/{basename}/*{qname}*.gguf"]
+    parts = ["llama-server", "-m", _weights_glob(basename, qname)]
     if vision:
         parts += ["--mmproj", f"~/models/{basename}/mmproj-*.gguf"]
     if pb.run_flags:
@@ -329,7 +338,8 @@ def setup_steps(model, profile, quant=None) -> list:
             dl_warnings.append(_plain(_UNDERSPEC_WARNING))
         steps.append(Step(
             title=f"Download the {qname} GGUF" if qname else "Download the GGUF weights",
-            command=f'hf download {repo} --include "*{qname}*.gguf" '
+            command=f'hf download {repo} --include "*-{qname}.gguf" '
+                    f'--include "*-{qname}-0*.gguf" --exclude "MTP/*" '
                     f"--local-dir ~/models/{basename}",
             what=_plain(f"downloads the {qname} GGUF weights"),
             warnings=dl_warnings, kind="download"))

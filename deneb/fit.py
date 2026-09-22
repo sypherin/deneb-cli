@@ -26,6 +26,7 @@ from typing import Optional
 
 from .hardware import GPUInfo, HardwareProfile  # noqa: F401  (typing / interface anchor)
 from .models_catalog import Model, Quant  # noqa: F401  (typing / interface anchor)
+from .speed import est_decode_tps, tier_for_tps
 
 # ── speed-tier ladder (worst -> best); index math clamps into this list ───────
 TIER_ORDER = ["very-slow", "slow", "medium", "fast"]
@@ -53,6 +54,7 @@ class FitResult:
     expected_speed_tier: str
     caveats: list = field(default_factory=list)
     need_mb: int = 0
+    est_tps: Optional[tuple] = None   # (low, high) decode tok/s when bandwidth is known
 
 
 def RUNTIME_RESERVE_MB(size_mb: int) -> int:
@@ -165,7 +167,16 @@ def _caveats(model, quant, profile, fits_ok: bool, headroom_mb: int,
     return caveats
 
 
-def fits(model, quant, profile) -> FitResult:
+def _estimate(model, quant, bw_gbps):
+    """(low, high) tok/s from the bandwidth model, or None when bandwidth/bpw unknown."""
+    if not bw_gbps:
+        return None
+    moe = (getattr(model, "architecture", "") or "").lower() == "moe" \
+        and bool(getattr(model, "active_params_b", None))
+    return est_decode_tps(_effective_params(model), getattr(quant, "bpw", 0), bw_gbps, moe=moe)
+
+
+def fits(model, quant, profile, bw_gbps=None) -> FitResult:
     """Does `model` at `quant` fit `profile`'s usable memory?
 
     need_mb = quant.size_mb + RUNTIME_RESERVE_MB(quant.size_mb).
@@ -183,7 +194,10 @@ def fits(model, quant, profile) -> FitResult:
         need_mb = size_mb + RUNTIME_RESERVE_MB(size_mb)
 
         backend = getattr(profile, "primary_backend", "cpu") or "cpu"
-        tier = _speed_tier(model, backend)
+        est = _estimate(model, quant, bw_gbps)
+        # Known memory bandwidth -> tier from the estimated tok/s (per quant, per box);
+        # otherwise the coarse params-based tier.
+        tier = tier_for_tps(est[1]) if est else _speed_tier(model, backend)
 
         usable = getattr(profile, "usable_mem_mb", None)
         usable_int: Optional[int]
@@ -197,14 +211,15 @@ def fits(model, quant, profile) -> FitResult:
             caveats = _caveats(model, quant, profile, False, 0, need_mb,
                                budget_unknown=True)
             return FitResult(fits=False, headroom_mb=0, expected_speed_tier=tier,
-                             caveats=caveats, need_mb=need_mb)
+                             caveats=caveats, need_mb=need_mb, est_tps=est)
 
         headroom_mb = usable_int - need_mb
         fits_ok = headroom_mb >= 0
         caveats = _caveats(model, quant, profile, fits_ok, headroom_mb, need_mb,
                            budget_unknown=False)
         return FitResult(fits=fits_ok, headroom_mb=headroom_mb,
-                         expected_speed_tier=tier, caveats=caveats, need_mb=need_mb)
+                         expected_speed_tier=tier, caveats=caveats, need_mb=need_mb,
+                         est_tps=est)
     except Exception:  # noqa: BLE001 — the fit math must never crash the caller (PLAT-03)
         return FitResult(fits=False, headroom_mb=0, expected_speed_tier="very-slow",
                          caveats=["fit could not be computed for this model/box."],
