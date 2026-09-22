@@ -1,0 +1,902 @@
+{
+ "schema": 1,
+ "updated": "2026-09-23",
+ "notes": "Decode speed on a single stream is bounded by memory bandwidth: tok/s ~= efficiency x bandwidth_GBps / GB_read_per_token (GB read per token ~= active params x bytes/param). efficiency 0.55-0.75 in practice. Specs are vendor figures; 'confidence' marks entries to re-verify. The landscape job flags hardware seen in the wild that is missing here. 'match' = lowercase substrings of the detected GPU/CPU name that identify the device; 'exclude' = substrings that rule it out (laptop variants have lower bandwidth).",
+ "devices": [
+  {
+   "id": "rtx-3090",
+   "name": "NVIDIA GeForce RTX 3090",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 24,
+   "mem_type": "GDDR6X",
+   "bw_gbps": 936,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "vllm",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/",
+   "confidence": "high",
+   "match": [
+    "rtx 3090"
+   ],
+   "exclude": [
+    "3090 ti",
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-4090",
+   "name": "NVIDIA GeForce RTX 4090",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 24,
+   "mem_type": "GDDR6X",
+   "bw_gbps": 1008,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "vllm",
+    "sglang",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/",
+   "confidence": "high",
+   "match": [
+    "rtx 4090"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile",
+    "4090 d"
+   ]
+  },
+  {
+   "id": "rtx-5090",
+   "name": "NVIDIA GeForce RTX 5090",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Blackwell sm_120",
+   "mem_gb": 32,
+   "mem_type": "GDDR7",
+   "bw_gbps": 1792,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "vllm",
+    "sglang",
+    "tensorrt-llm",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/",
+   "confidence": "high",
+   "match": [
+    "rtx 5090"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-pro-6000-bw",
+   "name": "NVIDIA RTX PRO 6000 Blackwell",
+   "vendor": "nvidia",
+   "class": "workstation-gpu",
+   "arch": "Blackwell sm_120",
+   "mem_gb": 96,
+   "mem_type": "GDDR7 ECC",
+   "bw_gbps": 1792,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm",
+    "llama.cpp",
+    "exllamav3"
+   ],
+   "source": "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000/",
+   "confidence": "high",
+   "match": [
+    "rtx pro 6000"
+   ],
+   "exclude": [
+    "max-q"
+   ]
+  },
+  {
+   "id": "dgx-spark",
+   "name": "NVIDIA DGX Spark (GB10)",
+   "vendor": "nvidia",
+   "class": "unified-memory-box",
+   "arch": "Blackwell GB10 sm_121, ARM64",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5X unified",
+   "bw_gbps": 273,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "sglang",
+    "tensorrt-llm",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/products/workstations/dgx-spark/",
+   "confidence": "high",
+   "match": [
+    "gb10",
+    "dgx spark"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "jetson-agx-thor",
+   "name": "NVIDIA Jetson AGX Thor",
+   "vendor": "nvidia",
+   "class": "edge",
+   "arch": "Blackwell, ARM64",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5X unified",
+   "bw_gbps": 273,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-thor/",
+   "confidence": "high",
+   "match": [
+    "thor"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "h100-sxm",
+   "name": "NVIDIA H100 SXM",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90",
+   "mem_gb": 80,
+   "mem_type": "HBM3",
+   "bw_gbps": 3350,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/h100/",
+   "confidence": "high",
+   "match": [
+    "h100 80gb hbm3",
+    "h100 sxm"
+   ],
+   "exclude": [
+    "pcie",
+    "nvl"
+   ]
+  },
+  {
+   "id": "h200",
+   "name": "NVIDIA H200",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90",
+   "mem_gb": 141,
+   "mem_type": "HBM3e",
+   "bw_gbps": 4800,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/h200/",
+   "confidence": "high",
+   "match": [
+    "h200"
+   ],
+   "exclude": [
+    "nvl"
+   ]
+  },
+  {
+   "id": "b200",
+   "name": "NVIDIA B200",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Blackwell sm_100",
+   "mem_gb": 180,
+   "mem_type": "HBM3e",
+   "bw_gbps": 8000,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/dgx-b200/",
+   "confidence": "medium",
+   "notes": "180 GB usable of 192 GB physical; vendors quote 7.7 to 8 TB/s.",
+   "match": [
+    "b200"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "strix-halo-395",
+   "name": "AMD Ryzen AI Max+ 395 (Strix Halo)",
+   "vendor": "amd",
+   "class": "unified-memory-box",
+   "arch": "RDNA 3.5 gfx1151 iGPU + XDNA2 NPU",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5X-8000 unified",
+   "bw_gbps": 256,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "lemonade",
+    "ollama",
+    "vllm"
+   ],
+   "notes": "llama.cpp Vulkan usually wins decode, ROCm wins prompt processing. vLLM only via community gfx1151 builds.",
+   "source": "https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html",
+   "confidence": "high",
+   "match": [
+    "gfx1151",
+    "8060s",
+    "ai max+ 395",
+    "ai max 395",
+    "strix halo"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "rx-7900-xtx",
+   "name": "AMD Radeon RX 7900 XTX",
+   "vendor": "amd",
+   "class": "consumer-gpu",
+   "arch": "RDNA 3 gfx1100",
+   "mem_gb": 24,
+   "mem_type": "GDDR6",
+   "bw_gbps": 960,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.amd.com/en/products/graphics/desktops/radeon/7000-series/amd-radeon-rx-7900xtx.html",
+   "confidence": "high",
+   "match": [
+    "7900 xtx"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "rx-9070-xt",
+   "name": "AMD Radeon RX 9070 XT",
+   "vendor": "amd",
+   "class": "consumer-gpu",
+   "arch": "RDNA 4 gfx1201",
+   "mem_gb": 16,
+   "mem_type": "GDDR6",
+   "bw_gbps": 640,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "ollama"
+   ],
+   "source": "https://www.amd.com/en/products/graphics/desktops/radeon/9000-series/amd-radeon-rx-9070xt.html",
+   "confidence": "high",
+   "match": [
+    "9070 xt"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "mi300x",
+   "name": "AMD Instinct MI300X",
+   "vendor": "amd",
+   "class": "datacenter-gpu",
+   "arch": "CDNA 3 gfx942",
+   "mem_gb": 192,
+   "mem_type": "HBM3",
+   "bw_gbps": 5300,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang"
+   ],
+   "source": "https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html",
+   "confidence": "high",
+   "match": [
+    "mi300x"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m4-max",
+   "name": "Apple M4 Max (40-core GPU)",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5X unified",
+   "bw_gbps": 546,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "notes": "Max memory depends on configuration (36 to 128 GB). mlx_lm.server is OpenAI-compatible, no wrapper needed.",
+   "source": "https://www.apple.com/macbook-pro/specs/",
+   "confidence": "high",
+   "match": [
+    "m4 max"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m3-ultra",
+   "name": "Apple M3 Ultra",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 512,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 819,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "notes": "Max memory depends on configuration (96 to 512 GB).",
+   "source": "https://www.apple.com/mac-studio/specs/",
+   "confidence": "high",
+   "match": [
+    "m3 ultra"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "arc-b580",
+   "name": "Intel Arc B580",
+   "vendor": "intel",
+   "class": "consumer-gpu",
+   "arch": "Xe2 Battlemage",
+   "mem_gb": 12,
+   "mem_type": "GDDR6",
+   "bw_gbps": 456,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "openvino",
+    "ollama"
+   ],
+   "notes": "llama.cpp via SYCL or Vulkan backend.",
+   "source": "https://www.intel.com/content/www/us/en/products/sku/241598/intel-arc-b580-graphics/specifications.html",
+   "confidence": "high",
+   "match": [
+    "arc b580"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "arc-pro-b60",
+   "name": "Intel Arc Pro B60",
+   "vendor": "intel",
+   "class": "workstation-gpu",
+   "arch": "Xe2 Battlemage",
+   "mem_gb": 24,
+   "mem_type": "GDDR6",
+   "bw_gbps": 456,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "openvino",
+    "vllm"
+   ],
+   "source": "https://download.intel.com/newsroom/2025/client-computing/Intel-Arc-Pro-B60-Data-Sheet.pdf",
+   "confidence": "high",
+   "match": [
+    "arc pro b60"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "rtx-3060-12gb",
+   "name": "NVIDIA GeForce RTX 3060 12GB",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 12,
+   "mem_type": "GDDR6",
+   "bw_gbps": 360,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3060-3060ti/",
+   "confidence": "medium",
+   "match": [
+    "rtx 3060"
+   ],
+   "exclude": [
+    "3060 ti",
+    "laptop",
+    "mobile"
+   ],
+   "notes": "The 8 GB RTX 3060 variant has 240 GB/s."
+  },
+  {
+   "id": "rtx-4060-ti",
+   "name": "NVIDIA GeForce RTX 4060 Ti (16GB)",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 16,
+   "mem_type": "GDDR6",
+   "bw_gbps": 288,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4060-4060ti/",
+   "confidence": "high",
+   "match": [
+    "rtx 4060 ti"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ],
+   "notes": "8 GB and 16 GB variants share the 288 GB/s bus."
+  },
+  {
+   "id": "rtx-4070-ti-super",
+   "name": "NVIDIA GeForce RTX 4070 Ti SUPER",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 16,
+   "mem_type": "GDDR6X",
+   "bw_gbps": 672,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4070-family/",
+   "confidence": "high",
+   "match": [
+    "rtx 4070 ti super"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-4080-super",
+   "name": "NVIDIA GeForce RTX 4080 SUPER",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 16,
+   "mem_type": "GDDR6X",
+   "bw_gbps": 736,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4080-family/",
+   "confidence": "high",
+   "match": [
+    "rtx 4080 super"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-4080",
+   "name": "NVIDIA GeForce RTX 4080",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 16,
+   "mem_type": "GDDR6X",
+   "bw_gbps": 717,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4080-family/",
+   "confidence": "high",
+   "match": [
+    "rtx 4080"
+   ],
+   "exclude": [
+    "super",
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-5060-ti",
+   "name": "NVIDIA GeForce RTX 5060 Ti (16GB)",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Blackwell sm_120",
+   "mem_gb": 16,
+   "mem_type": "GDDR7",
+   "bw_gbps": 448,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5060-family/",
+   "confidence": "high",
+   "match": [
+    "rtx 5060 ti"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-5070-ti",
+   "name": "NVIDIA GeForce RTX 5070 Ti",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Blackwell sm_120",
+   "mem_gb": 16,
+   "mem_type": "GDDR7",
+   "bw_gbps": 896,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5070-family/",
+   "confidence": "high",
+   "match": [
+    "rtx 5070 ti"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-5080",
+   "name": "NVIDIA GeForce RTX 5080",
+   "vendor": "nvidia",
+   "class": "consumer-gpu",
+   "arch": "Blackwell sm_120",
+   "mem_gb": 16,
+   "mem_type": "GDDR7",
+   "bw_gbps": 960,
+   "fp4": true,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "exllamav3",
+    "ollama",
+    "vllm"
+   ],
+   "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5080/",
+   "confidence": "high",
+   "match": [
+    "rtx 5080"
+   ],
+   "exclude": [
+    "laptop",
+    "mobile"
+   ]
+  },
+  {
+   "id": "rtx-6000-ada",
+   "name": "NVIDIA RTX 6000 Ada Generation",
+   "vendor": "nvidia",
+   "class": "workstation-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 48,
+   "mem_type": "GDDR6 ECC",
+   "bw_gbps": 960,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "llama.cpp",
+    "exllamav3"
+   ],
+   "source": "https://www.nvidia.com/en-us/products/workstations/rtx-6000/",
+   "confidence": "high",
+   "match": [
+    "rtx 6000 ada"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "rtx-a6000",
+   "name": "NVIDIA RTX A6000",
+   "vendor": "nvidia",
+   "class": "workstation-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 48,
+   "mem_type": "GDDR6 ECC",
+   "bw_gbps": 768,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "exllamav3",
+    "sglang"
+   ],
+   "source": "https://www.nvidia.com/en-us/products/workstations/rtx-a6000/",
+   "confidence": "high",
+   "match": [
+    "rtx a6000"
+   ],
+   "exclude": [
+    "ada"
+   ]
+  },
+  {
+   "id": "l40s",
+   "name": "NVIDIA L40S",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 48,
+   "mem_type": "GDDR6 ECC",
+   "bw_gbps": 864,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm",
+    "llama.cpp"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/l40s/",
+   "confidence": "high",
+   "match": [
+    "l40s"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "a100-80gb",
+   "name": "NVIDIA A100 80GB",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ampere sm_80",
+   "mem_gb": 80,
+   "mem_type": "HBM2e",
+   "bw_gbps": 1935,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/a100/",
+   "confidence": "high",
+   "match": [
+    "a100 80gb",
+    "a100 sxm4 80gb"
+   ],
+   "exclude": [],
+   "notes": "PCIe 1935 GB/s; the SXM part reaches 2039 GB/s."
+  },
+  {
+   "id": "m4-pro",
+   "name": "Apple M4 Pro",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 64,
+   "mem_type": "LPDDR5X unified",
+   "bw_gbps": 273,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://www.apple.com/mac-mini/specs/",
+   "confidence": "high",
+   "match": [
+    "m4 pro"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m3-max",
+   "name": "Apple M3 Max",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 300,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://support.apple.com/specs",
+   "confidence": "medium",
+   "match": [
+    "m3 max"
+   ],
+   "exclude": [],
+   "notes": "300 GB/s on the 30-core GPU part, 400 GB/s on the 40-core part; we take the lower."
+  },
+  {
+   "id": "m2-max",
+   "name": "Apple M2 Max",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 96,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 400,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://support.apple.com/specs",
+   "confidence": "high",
+   "match": [
+    "m2 max"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m1-max",
+   "name": "Apple M1 Max",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 64,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 400,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://support.apple.com/specs",
+   "confidence": "high",
+   "match": [
+    "m1 max"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m2-ultra",
+   "name": "Apple M2 Ultra",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 192,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 800,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://support.apple.com/specs",
+   "confidence": "high",
+   "match": [
+    "m2 ultra"
+   ],
+   "exclude": []
+  },
+  {
+   "id": "m1-ultra",
+   "name": "Apple M1 Ultra",
+   "vendor": "apple",
+   "class": "unified-memory-box",
+   "arch": "Apple Silicon, Metal",
+   "mem_gb": 128,
+   "mem_type": "LPDDR5 unified",
+   "bw_gbps": 800,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "mlx-lm",
+    "llama.cpp",
+    "ollama",
+    "lm-studio"
+   ],
+   "source": "https://support.apple.com/specs",
+   "confidence": "high",
+   "match": [
+    "m1 ultra"
+   ],
+   "exclude": []
+  }
+ ]
+}

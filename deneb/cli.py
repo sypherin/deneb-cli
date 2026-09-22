@@ -58,6 +58,26 @@ def cmd_logout(_argv=None) -> int:
     return 0
 
 
+def _device_lines(p, C) -> list:
+    """What Deneb knows about this box's hardware class from the bundled catalog:
+    bandwidth (drives tok/s estimates) and the engines that suit it, best first."""
+    from . import speed
+    dev = speed.device_for_profile(p)
+    if not dev:
+        return [f"  {C['d']}hardware class: not in Deneb's hardware catalog yet, so speeds "
+                f"are rough tiers, not tok/s estimates{C['z']}"]
+    bw = speed.usable_bandwidth(p, dev)
+    engines = ", ".join(dev.get("engines") or []) or "?"
+    out = [f"  {C['b']}hardware class:{C['z']} {dev.get('name')} "
+           f"{C['d']}({dev.get('mem_gb')} GB {dev.get('mem_type')}, "
+           f"~{dev.get('bw_gbps')} GB/s){C['z']}",
+           f"  {C['b']}engines that suit it:{C['z']} {engines} {C['d']}(best first){C['z']}"]
+    if bw is None:
+        out.append(f"  {C['amber']}running CPU-only, so the GPU's bandwidth does not apply; "
+                   f"install the GPU runtime first{C['z']}")
+    return out
+
+
 def cmd_profile(_argv=None) -> int:
     """`deneb profile` — read this box and print the structured HardwareProfile. Local,
     deterministic, KEYLESS, read-only: no auth, no engine/LLM round-trip (like `check`)."""
@@ -94,6 +114,8 @@ def cmd_profile(_argv=None) -> int:
         if tail:
             print(f"      {_C['d']}{tail}{_C['z']}")
     print(f"\n  {_C['b']}primary backend:{_C['z']} {p.primary_backend}")
+    for line in _device_lines(p, _C):
+        print(line)
     if p.usable_mem_mb is not None:
         print(f"  {_C['b']}usable model budget:{_C['z']} ~{p.usable_mem_mb} MB "
               f"{_C['d']}(coarse — Phase-2 fit math refines this){_C['z']}")
@@ -145,7 +167,7 @@ def cmd_recommend(argv=None) -> int:
     catalog for the use-case, and print a table + a next-step pointer. Local, deterministic,
     KEYLESS, engine-free: no auth, no LLM, no engine round-trip. It EXECUTES NOTHING (the
     Deneb Rule) — the 'next: deneb setup <pick>' line is a printed pointer, not an invocation."""
-    from . import hardware, recommend as rec  # deterministic, local — no engine round-trip
+    from . import hardware, hf_catalog, speed, recommend as rec  # local, no engine round-trip
     argv = list(argv or [])
     use_case = (_flag(argv, "--use") or "general").strip().lower()
     if use_case not in _RECOMMEND_USE_CASES:
@@ -156,22 +178,29 @@ def cmd_recommend(argv=None) -> int:
     _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
           "teal": "\033[38;5;44m", "amber": "\033[33m"}
     p = hardware.profile_hardware()
-    recs = rec.recommend(p, use_case)
+    models, source = hf_catalog.ranking_catalog()
+    bw = speed.usable_bandwidth(p, speed.device_for_profile(p))
+    recs = rec.recommend(p, use_case, catalog=models, bw_gbps=bw)
 
     ui.banner()
     budget = f"~{p.usable_mem_mb} MB" if p.usable_mem_mb is not None else "unknown"
     print(f"{_C['d']}ranking local models for {_C['z']}{_C['b']}{use_case}{_C['z']} "
-          f"{_C['d']}on this box (budget {budget} · {p.primary_backend}, no engine)…{_C['z']}\n")
+          f"{_C['d']}on this box (budget {budget} · {p.primary_backend}, no engine; "
+          f"{source})…{_C['z']}")
+    for line in _device_lines(p, _C):
+        print(line)
+    print()
 
-    print(f"  {_C['b']}{'#':<2} {'model':<30} {'quant':<7} "
-          f"{'fit':<18} {'speed':<9}{_C['z']}")
+    print(f"  {_C['b']}{'#':<2} {'model':<30} {'quant':<11} "
+          f"{'fit':<18} {'speed':<9} {'est decode':<16}{_C['z']}")
     for i, r in enumerate(recs, 1):
         name = (getattr(r.model, 'name', '') or '?')[:30]
         qname = getattr(r.quant, 'name', '') or '?'
         tier = getattr(r.fit, 'expected_speed_tier', '') or '?'
         col = _C['g'] if getattr(r.fit, 'fits', False) else _C['amber']
+        est = speed.fmt_tps(getattr(r.fit, "est_tps", None)) if bw else "-"
         print(f"  {_C['teal']}{i:<2}{_C['z']} {_C['b']}{name:<30}{_C['z']} "
-              f"{qname:<7} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9}")
+              f"{qname:<11} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9} {est:<16}")
         print(f"     {_C['d']}why: {r.why}{_C['z']}")
 
     # Opt-in real numbers from TokenMark (community-measured tok/s). Default stays
@@ -198,6 +227,10 @@ def cmd_recommend(argv=None) -> int:
             print(f"\n  {_C['d']}(no TokenMark measurements matched — site unreachable or "
                   f"no data for these models yet){_C['z']}")
 
+    if bw:
+        print(f"\n  {_C['d']}est decode = single-user tok/s from memory bandwidth, no "
+              f"speculative decoding (MTP / draft models add 1.5-2.5x). Real numbers: "
+              f"--measured{_C['z']}")
     top = recs[0]
     if not getattr(top.fit, "fits", False):
         print(f"\n  {_C['amber']}nothing in the catalog fits this box for "
@@ -225,10 +258,12 @@ def cmd_setup(argv=None) -> int:
                  "       not sure which model? rank this box first:  deneb recommend --use coding")
         return 2
 
-    model = setup_advisor.resolve_model(name)
+    from . import hf_catalog
+    known = hf_catalog.all_models()
+    model = setup_advisor.resolve_model(name, known)
     if model is None:
         import difflib
-        names = [getattr(m, "name", "") for m in setup_advisor.CATALOG]
+        names = [getattr(m, "name", "") for m in known]
         close = difflib.get_close_matches(name, names, n=1, cutoff=0.4)
         hint = f" did you mean '{close[0]}'?" if close else ""
         ui.error(f"unknown model '{name}'.{hint}\n"
@@ -569,6 +604,7 @@ usage:
   deneb check                   scan the box — am I done?
   deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
   deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
+  deneb catalog [--refresh]     the models Deneb ranks, real per-quant sizes (--refresh pulls Hugging Face)
   deneb setup <model>           print the tell-only, platform-branched setup steps (runs nothing)
   deneb guide [platform]        pre-flight runbook for the BOX (strix-halo | dgx-spark)
   deneb stack [service]         several models behind ONE authed endpoint
@@ -584,6 +620,40 @@ Deneb can APPLY fixes (edit a config, mkdir, systemctl --user restart) — it sh
 one and asks before running it (gate by default). It NEVER runs anything destructive,
 irreversible, or needing sudo — those it hands you to run yourself.
 """
+
+
+def cmd_catalog(argv=None) -> int:
+    """`deneb catalog [--refresh]` — list the models Deneb ranks, with real per-quant sizes.
+    --refresh re-reads every watchlist model from Hugging Face (keyless, one network call
+    per model) into ~/.cache/deneb/models.json. Writes only Deneb's own cache."""
+    from . import hf_catalog
+    argv = list(argv or [])
+    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
+          "teal": "\033[38;5;44m", "amber": "\033[33m"}
+    ui.banner()
+    if "--refresh" in argv:
+        print(f"{_C['d']}refreshing from Hugging Face…{_C['z']}")
+        ents, errs = hf_catalog.refresh()
+        for e in errs:
+            print(f"  {_C['amber']}! {e}{_C['z']}")
+        if not ents:
+            ui.error("refresh got no models; keeping the existing catalog.")
+            return 1
+        hf_catalog.write_json(hf_catalog.CACHE_PATH, {
+            "schema": 1, "generated": ents[0]["fetched"], "models": ents, "errors": errs})
+        print(f"  {_C['g']}saved {len(ents)} models to {hf_catalog.CACHE_PATH}{_C['z']}\n")
+    ents, label = hf_catalog.load_entries()
+    if not ents:
+        ui.error("no live catalog found (reinstall deneb, or run: deneb catalog --refresh)")
+        return 1
+    print(f"{_C['d']}{len(ents)} models · {label}{_C['z']}\n")
+    for e in ents:
+        act = f", {e['active_params_b']}B active" if e.get("active_params_b") else ""
+        print(f"  {_C['teal']}{_C['b']}{e['name']}{_C['z']} {_C['d']}{e['params_b']}B "
+              f"{e.get('architecture')}{act} · {', '.join(e.get('capabilities') or [])}{_C['z']}")
+        qs = "  ".join(f"{q['name']} {round(q['size_mb'] / 1000, 1)}GB" for q in e["quants"])
+        print(f"    {qs}")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -609,6 +679,8 @@ def main(argv=None) -> int:
         return cmd_recommend(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] == "setup":
         return cmd_setup(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
+    if argv and argv[0] == "catalog":
+        return cmd_catalog(argv[1:])  # local list; --refresh reads Hugging Face (keyless)
     if argv and argv[0] == "guide":
         return cmd_guide(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] == "stack":

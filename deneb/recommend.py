@@ -14,7 +14,9 @@ model.name ASCENDING as the final stable tie-break:
   2. runs_acceptably  — 1 unless the (fitting) model would crawl (very-slow tier); demotes
                         giants that "fit" but are unusably slow.
   3. capability_proxy — params_b (TOTAL params; for a MoE, total ~ capability while active
-                        params drove the speed tier).
+                        params drove the speed tier) x a quant-quality factor, so a giant
+                        squeezed to 2-bit does not automatically outrank a model that runs at
+                        4-bit or better (2-bit x0.6, 3-bit x0.85).
   4. speed_rank       — faster tier first.
   5. headroom_mb      — a more comfortable fit first.
   6. quant bpw        — higher-quality quant first.
@@ -34,6 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit import TIER_ORDER, fits
+from .speed import fmt_tps
 from .models_catalog import CATALOG, Model, Quant, by_capability  # noqa: F401
 
 # The fixed use-case vocabulary; an unknown value normalizes to "general".
@@ -75,23 +78,23 @@ def _norm_use_case(use_case) -> str:
     return uc if uc in USE_CASES else "general"
 
 
-def _eligible(use_case: str) -> list:
+def _eligible(use_case: str, catalog=None) -> list:
     """Every catalog model whose capabilities include use_case OR 'general' (general models
-    are always eligible as a fallback). Preserves CATALOG order (deterministic)."""
+    are always eligible as a fallback). Preserves catalog order (deterministic)."""
     out = []
-    for m in CATALOG:
+    for m in (CATALOG if catalog is None else catalog):
         caps = getattr(m, "capabilities", None) or []
         if use_case in caps or "general" in caps:
             out.append(m)
     return out
 
 
-def _best_fitting_quant(model, profile):
+def _best_fitting_quant(model, profile, bw_gbps=None):
     """Among the model's quants that fit, the highest-bpw one (best quality that still fits),
     with its FitResult. Returns (quant, fit) or (None, None) when nothing fits."""
     best = None  # (bpw, quant, fitresult)
     for q in getattr(model, "quants", None) or []:
-        fr = fits(model, q, profile)
+        fr = fits(model, q, profile, bw_gbps)
         if fr.fits:
             bpw = float(getattr(q, "bpw", 0) or 0)
             if best is None or bpw > best[0]:
@@ -109,6 +112,28 @@ def _speed_rank(tier: str) -> int:
         return 0
 
 
+def quant_bits(qname) -> int:
+    """Nominal bit class from a quant NAME (Q2_K / UD-Q2_K_XL -> 2, IQ4_XS -> 4, MXFP4 -> 4,
+    Q8_0 -> 8). Names, not file bpw: hybrid models keep some layers wide, so a "2-bit" file
+    can average 5 bpw while its expert weights are still 2-bit. 16 when unrecognised."""
+    import re
+    n = str(qname or "").upper()
+    if "FP4" in n:
+        return 4
+    m = re.search(r"I?Q(\d)", n)
+    return int(m.group(1)) if m else 16
+
+
+def quality_factor(qname) -> float:
+    """Capability discount for aggressive quantisation (ranking only, never fit)."""
+    bits = quant_bits(qname)
+    if bits <= 2:
+        return 0.6
+    if bits == 3:
+        return 0.85
+    return 1.0
+
+
 def _rank_key(cand, use_case: str) -> tuple:
     """The DESCENDING composite sort key for a fitting candidate (model.name is applied as a
     separate ascending pre-sort, so equal-key candidates stay name-ordered)."""
@@ -116,7 +141,8 @@ def _rank_key(cand, use_case: str) -> tuple:
     caps = getattr(model, "capabilities", None) or []
     specificity = 1 if use_case in caps else 0
     runs_acceptably = 1 if getattr(fr, "expected_speed_tier", "") != "very-slow" else 0
-    capability_proxy = float(getattr(model, "params_b", 0) or 0)
+    capability_proxy = float(getattr(model, "params_b", 0) or 0) \
+        * quality_factor(getattr(quant, "name", ""))
     speed_rank = _speed_rank(getattr(fr, "expected_speed_tier", ""))
     headroom = int(getattr(fr, "headroom_mb", 0) or 0)
     bpw = float(getattr(quant, "bpw", 0) or 0)
@@ -143,8 +169,12 @@ def _why(model, quant, fr, use_case: str, profile, is_top: bool) -> str:
     tier = getattr(fr, "expected_speed_tier", "") or "unknown"
     backend = getattr(profile, "primary_backend", "") or "cpu"
     role = _role_phrase(model, use_case, is_top)
+    est = getattr(fr, "est_tps", None)
+    speed = f"{tier}, {fmt_tps(est)}" if est else tier
     line = (f"{name} ({qname}): {role} that fits your ~{usable_gb} GB budget with "
-            f"~{headroom_gb} GB to spare; expected speed: {tier} on {backend}.")
+            f"~{headroom_gb} GB to spare; expected speed: {speed} on {backend}.")
+    if quant_bits(qname) <= 3:
+        line += f" {quant_bits(qname)}-bit quant: noticeable quality loss vs 4-bit and up."
     caveats = getattr(fr, "caveats", None) or []
     if caveats:
         line += " " + str(caveats[0])
@@ -191,14 +221,15 @@ def _why_nothing_fits(model, quant, fr, use_case: str, profile) -> str:
     return _plain(line)
 
 
-def _nothing_fits(eligible, use_case: str, profile) -> Recommendation:
+def _nothing_fits(eligible, use_case: str, profile, catalog=None) -> Recommendation:
     """REC-03: no model+quant fits — return ONE honest under-spec Recommendation for the
     smallest option (least need_mb) with fits=False. Never raises."""
+    full = list(CATALOG if not catalog else catalog)
     try:
-        pool = list(eligible) or list(CATALOG)
+        pool = list(eligible) or full
         m, q, fr = _smallest_option(pool, profile)
         if m is None:
-            m, q, fr = _smallest_option(list(CATALOG), profile)
+            m, q, fr = _smallest_option(full, profile)
         return Recommendation(model=m, quant=q, fit=fr,
                               why=_why_nothing_fits(m, q, fr, use_case, profile))
     except Exception:  # noqa: BLE001 — the nothing-fits path must itself never raise
@@ -212,8 +243,13 @@ def _nothing_fits(eligible, use_case: str, profile) -> Recommendation:
 
 
 # ── the public entry point ────────────────────────────────────────────────────
-def recommend(profile, use_case, top_n: int = 3) -> list:
+def recommend(profile, use_case, top_n: int = 3, catalog=None, bw_gbps=None) -> list:
     """Rank the catalog for `profile` + `use_case`, returning the top-N Recommendations.
+
+    `catalog` defaults to the curated static CATALOG; the CLI passes the live Hugging Face
+    catalog (hf_catalog.load_models()). `bw_gbps` is the box's memory bandwidth from the
+    hardware catalog (speed.device_for_profile); when given, every pick carries an
+    estimated tok/s and the speed tier comes from it.
 
     Deterministic + pure: keeps each eligible model's best fitting quant, sorts by the
     <ranking_spec> composite key (name-ascending stable tie-break), slices top_n, and builds
@@ -221,16 +257,16 @@ def recommend(profile, use_case, top_n: int = 3) -> list:
     an empty list). Degrades honestly and NEVER raises on a degraded/None-budget profile."""
     try:
         uc = _norm_use_case(use_case)
-        eligible = _eligible(uc)
+        eligible = _eligible(uc, catalog)
 
         candidates = []
         for m in eligible:
-            q, fr = _best_fitting_quant(m, profile)
+            q, fr = _best_fitting_quant(m, profile, bw_gbps)
             if q is not None:
                 candidates.append((m, q, fr))
 
         if not candidates:
-            return [_nothing_fits(eligible, uc, profile)]
+            return [_nothing_fits(eligible, uc, profile, catalog)]
 
         # Deterministic order: name ASCENDING first, then the DESCENDING composite key.
         # Python's sort is stable, so equal-composite-key candidates stay name-ordered.
@@ -250,4 +286,5 @@ def recommend(profile, use_case, top_n: int = 3) -> list:
                 why=_why(m, q, fr, uc, profile, is_top=(i == 0))))
         return recs
     except Exception:  # noqa: BLE001 — recommend must degrade, never crash the caller (T-03-02)
-        return [_nothing_fits(list(CATALOG), _norm_use_case(use_case), profile)]
+        return [_nothing_fits(list(catalog or CATALOG), _norm_use_case(use_case), profile,
+                              catalog)]

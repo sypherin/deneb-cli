@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deneb-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deneb — Altronis's local-LLM (Neo) setup + troubleshooting agent for AI boxes"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -16,3 +16,6 @@ deneb = "deneb.cli:main"
 
 [tool.setuptools]
 packages = ["deneb"]
+
+[tool.setuptools.package-data]
+deneb = ["data/*.json"]

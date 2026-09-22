@@ -4,4 +4,4 @@ Open, read-only thin client. All intelligence (KB, guardrails, model) lives in t
 private Neo Altronis cloud; this client only reads the box + relays. No third-party
 branding, no telemetry, no sudo.
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
