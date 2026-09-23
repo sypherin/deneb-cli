@@ -1,0 +1,47 @@
+{
+ "schema": 1,
+ "updated": "2026-09-23",
+ "notes": "Where Deneb reads LIVE hardware prices. Official stores and authorised Singapore resellers only, one product page each, read through the page's own machine-readable price (Shopify product JSON, Apple's price object, or the og product:price meta tag). No marketplace scraping. `ships_from: overseas` = priced abroad and imported: landed cost adds Singapore GST at import (gst_rate) and is still BEFORE shipping. The daily Deneb landscape job runs deneb.prices.refresh() and publishes the result in landscape.json, which altronis.sg reads.",
+ "gst_rate": 0.09,
+ "items": [
+  {
+   "id": "strix-halo-128",
+   "device": "strix-halo-395",
+   "label": "AMD Ryzen AI Max+ 395 mini PC, 128 GB",
+   "class": "small",
+   "sources": [
+    {"seller": "GMKtec (EVO-X2)", "trust": "Official store", "kind": "shopify", "ships_from": "overseas",
+     "url": "https://www.gmktec.com/products/amd-ryzen%e2%84%a2-ai-max-395-evo-x2-ai-mini-pc",
+     "variant_match": ["128gb"], "variant_exclude": ["coding plan"]},
+    {"seller": "Bosgame (M5)", "trust": "Official store", "kind": "shopify", "ships_from": "overseas",
+     "url": "https://www.bosgame.com/products/bosgame-m5-ai-mini-desktop-ryzen-ai-max-395-96gb-128gb-2tb",
+     "variant_match": ["128g"]},
+    {"seller": "ALLSTARS (Singapore)", "trust": "Local distributor, 3yr warranty", "kind": "meta", "ships_from": "sg",
+     "url": "https://allstars.com.sg/shop/pc/pc-complete/gmktec-evo-x2-ai-mini-pc-amd-ryzen-ai-max-395-128gb-lpddr5-2tb-gen4-ssd-2-5g-lan-wifi7-licensed-windows-11-pro/"}
+   ]
+  },
+  {
+   "id": "dgx-spark",
+   "device": "dgx-spark",
+   "label": "NVIDIA DGX Spark, 128 GB, 4 TB",
+   "class": "small",
+   "sources": [
+    {"seller": "SourceIT (Singapore)", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/nvidia-dgx-spark-ai-supercomputer-4tb-940-54242-0007-000"},
+    {"seller": "Vii PC Trade (Singapore)", "trust": "Local reseller, 1yr warranty", "kind": "shopify", "ships_from": "sg",
+     "url": "https://www.viipc.sg/products/nvidia-dgx-spark-ai-server-enterprise-gpu-computing-platform-4tb-128gb-ai-desktop"}
+   ]
+  },
+  {
+   "id": "mac-studio",
+   "device": "m5-ultra",
+   "label": "Apple Mac Studio, M5 Ultra (96 GB base)",
+   "class": "small",
+   "sources": [
+    {"seller": "Apple (SG)", "trust": "Official store, configure to order", "kind": "apple", "ships_from": "sg",
+     "url": "https://www.apple.com/sg/shop/buy-mac/mac-studio",
+     "variant_match": ["m5ultra"]}
+   ]
+  }
+ ]
+}
