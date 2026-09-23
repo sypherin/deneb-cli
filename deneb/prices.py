@@ -1,7 +1,6 @@
 """deneb.prices — live hardware prices, read from the seller's own page every day.
 
-Prices typed into web pages go stale in weeks (the 2026 memory crunch moved a 128 GB box
-by S$1,000+ in a month) and then disagree with each other. This module is the one place
+Prices typed into web pages go stale in weeks and then disagree with each other. This module is the one place
 a price comes from: deneb/data/price_sources.json names the official stores and
 authorised Singapore resellers, and refresh() reads each product page's own
 machine-readable price. The Deneb landscape job publishes the result in landscape.json,
