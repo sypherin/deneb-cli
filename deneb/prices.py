@@ -7,7 +7,7 @@ machine-readable price. The Deneb landscape job publishes the result in landscap
 which altronis.sg reads, so the site, the Deneb assistant and the CLI quote one number.
 
 Layers:
-  * pure:  parse_shopify(), parse_meta(), parse_apple(), summarise_item()  (unit-tested)
+  * pure:  parse_shopify(), parse_meta(), parse_availability(), parse_apple(), summarise_item()  (unit-tested)
   * I/O:   fetch_source(), fetch_fx(), refresh()                          (network, fail-soft)
 
 Fail-soft per source, loud in the output: a source that cannot be read is kept with
@@ -20,6 +20,7 @@ import datetime as _dt
 import json
 import os
 import re
+import urllib.parse
 import urllib.request
 from typing import Optional
 
@@ -75,6 +76,21 @@ def parse_meta(html: str) -> tuple:
         return [], None
     c = _META_CUR.search(html or "")
     return [price], (c.group(1) if c else None)
+
+
+_LD_AVAIL = re.compile(r'"availability"\s*:\s*"(?:https?:\\?/\\?/schema\.org\\?/)?(\w+)"')
+_BUYABLE = {"InStock", "PreOrder", "BackOrder", "LimitedAvailability", "OnlineOnly", "InStoreOnly"}
+
+
+def parse_availability(html: str) -> Optional[bool]:
+    """schema.org availability in the page's JSON-LD: True when any offer is buyable
+    (in stock, pre-order, back-order), False when every offer is out of stock or sold
+    out, None when the page does not say. A shop keeps its og price tag on a sold-out
+    product, so the price alone does not mean you can buy at it."""
+    vals = set(_LD_AVAIL.findall(html or ""))
+    if not vals:
+        return None
+    return bool(vals & _BUYABLE)
 
 
 def parse_apple(html: str, match=None) -> list:
@@ -141,6 +157,9 @@ def summarise_item(item: dict, results: list, gst_rate: float) -> dict:
 
 # ── I/O ───────────────────────────────────────────────────────────────────────
 def _fetch(url: str, timeout: int = 25) -> str:
+    # store URLs can carry non-ASCII (a "™" in a product handle); percent-encode it,
+    # leaving existing escapes and URL punctuation alone
+    url = urllib.parse.quote(url, safe=":/?&=%#+,;@!$'()*[]~")
     req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept-Language": "en-SG,en;q=0.9"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
@@ -176,7 +195,11 @@ def fetch_source(src: dict, usd_sgd: Optional[float], now: str) -> dict:
                                 src.get("variant_match"), src.get("variant_exclude"))
             cur = _shopify_currency(src["url"])
         elif kind == "meta":
-            raw, cur = parse_meta(_fetch(src["url"]))
+            page = _fetch(src["url"])
+            raw, cur = parse_meta(page)
+            if raw and parse_availability(page) is False:
+                rec.update({"out_of_stock": True, "listed": raw[0], "currency": cur})
+                raise ValueError(f"out of stock (page still lists {cur or ''} {raw[0]:,.0f})")
         elif kind == "apple":
             raw, cur = parse_apple(_fetch(src["url"]), src.get("variant_match")), "SGD"
         else:
@@ -206,18 +229,20 @@ def refresh(cfg: Optional[dict] = None) -> dict:
     now = _dt.datetime.now(SGT).isoformat(timespec="minutes")
     usd_sgd, fx_date, fx_src = fetch_fx()
     gst = float(cfg.get("gst_rate", 0.09))
-    items, errors = [], []
+    items, errors, unavailable = [], [], []
     if usd_sgd is None:
         errors.append("fx: no USD/SGD feed answered; overseas prices skipped")
     for it in cfg.get("items") or []:
         results = [fetch_source(s, usd_sgd, now) for s in it.get("sources") or []]
         for r in results:
-            if not r["ok"]:
+            if r.get("out_of_stock"):  # a market state, not a broken feed
+                unavailable.append(f"{it['id']} / {r['seller']}: {r.get('error')}")
+            elif not r["ok"]:
                 errors.append(f"{it['id']} / {r['seller']}: {r.get('error')}")
         items.append(summarise_item(it, results, gst))
     return {"generated": now, "currency": "SGD", "gst_rate": gst,
             "fx": {"usd_sgd": usd_sgd, "date": fx_date, "source": fx_src},
-            "items": items, "errors": errors}
+            "items": items, "unavailable": unavailable, "errors": errors}
 
 
 if __name__ == "__main__":  # pragma: no cover - manual check

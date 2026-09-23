@@ -104,3 +104,51 @@ def test_sources_file_is_valid():
         for s in it["sources"]:
             assert s["kind"] in {"shopify", "meta", "apple"}
             assert s["url"].startswith("https://") and s["ships_from"] in {"sg", "overseas"}
+
+
+def test_availability_from_json_ld():
+    assert pr.parse_availability('{"availability":"http://schema.org/OutOfStock"}') is False
+    assert pr.parse_availability('{"availability":"http:\\/\\/schema.org\\/InStock"}') is True
+    assert pr.parse_availability('{"availability":"https://schema.org/PreOrder"}') is True
+    assert pr.parse_availability('"availability":"OutOfStock" "availability":"InStock"') is True
+    assert pr.parse_availability("<html></html>") is None
+
+
+def test_meta_source_out_of_stock_is_not_a_price(monkeypatch):
+    page = ('<meta property="product:price:amount" content="5399" /><meta property="product:price:currency" content="SGD" />'
+            '<script type="application/ld+json">{"offers":{"availability":"http://schema.org/OutOfStock"}}</script>')
+    monkeypatch.setattr(pr, "_fetch", lambda url, timeout=25: page)
+    r = pr.fetch_source({"seller": "A", "kind": "meta", "url": "https://x/p", "ships_from": "sg"}, 1.3, "now")
+    assert r["ok"] is False and "out of stock" in r["error"] and "5,399" in r["error"]
+    assert r["out_of_stock"] is True and r["listed"] == 5399.0
+
+
+def test_fetch_percent_encodes_non_ascii(monkeypatch):
+    seen = {}
+
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b"ok"
+
+    def fake_open(req, timeout=25):
+        seen["url"] = req.full_url
+        return R()
+    monkeypatch.setattr(pr.urllib.request, "urlopen", fake_open)
+    assert pr._fetch("https://s.sg/products/rtx-pro™-6000.js?a=1") == "ok"
+    assert seen["url"] == "https://s.sg/products/rtx-pro%E2%84%A2-6000.js?a=1"
+    pr._fetch("https://www.gmktec.com/products/amd-ryzen%e2%84%a2-x")
+    assert seen["url"].endswith("amd-ryzen%e2%84%a2-x")
+
+
+def test_refresh_separates_out_of_stock_from_errors(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_fx", lambda: (1.3, "d", "u"))
+
+    def fake(src, fx, now):
+        if src["seller"] == "oos":
+            return {"seller": "oos", "ok": False, "out_of_stock": True, "error": "out of stock"}
+        return {"seller": "dead", "ok": False, "error": "HTTPError"}
+    monkeypatch.setattr(pr, "fetch_source", fake)
+    r = pr.refresh({"items": [{"id": "x", "sources": [{"seller": "oos"}, {"seller": "dead"}]}]})
+    assert len(r["unavailable"]) == 1 and "oos" in r["unavailable"][0]
+    assert len(r["errors"]) == 1 and "dead" in r["errors"][0]
