@@ -102,7 +102,7 @@ def test_sources_file_is_valid():
     for it in cfg["items"]:
         assert it["sources"]
         for s in it["sources"]:
-            assert s["kind"] in {"shopify", "meta", "apple"}
+            assert s["kind"] in {"shopify", "meta", "apple", "link"}
             assert s["url"].startswith("https://") and s["ships_from"] in {"sg", "overseas"}
 
 
@@ -152,3 +152,14 @@ def test_refresh_separates_out_of_stock_from_errors(monkeypatch):
     r = pr.refresh({"items": [{"id": "x", "sources": [{"seller": "oos"}, {"seller": "dead"}]}]})
     assert len(r["unavailable"]) == 1 and "oos" in r["unavailable"][0]
     assert len(r["errors"]) == 1 and "dead" in r["errors"][0]
+
+
+def test_link_only_source_is_listed_not_fetched_and_not_an_error(monkeypatch):
+    def boom(url, timeout=25):
+        raise AssertionError("link-only sources must not be fetched")
+    monkeypatch.setattr(pr, "_fetch", boom)
+    r = pr.fetch_source({"seller": "F", "kind": "link", "url": "https://f/p", "ships_from": "overseas"}, 1.3, "now")
+    assert r["link_only"] and r["ok"] is False and "error" not in r
+    monkeypatch.setattr(pr, "fetch_fx", lambda: (1.3, "d", "u"))
+    out = pr.refresh({"items": [{"id": "x", "sources": [{"seller": "F", "kind": "link", "url": "https://f/p"}]}]})
+    assert out["errors"] == [] and out["unavailable"] == [] and out["items"][0]["from_sgd"] is None

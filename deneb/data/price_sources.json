@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "updated": "2026-09-23",
- "notes": "Where Deneb reads LIVE hardware prices. Official stores and authorised Singapore resellers only, one product page each, read through the page's own machine-readable price (Shopify product JSON, Apple's price object, or the og product:price meta tag). No marketplace scraping. `ships_from: overseas` = priced abroad and imported: landed cost adds Singapore GST at import (gst_rate) and is still BEFORE shipping. The daily Deneb landscape job runs deneb.prices.refresh() and publishes the result in landscape.json, which altronis.sg reads.",
+ "notes": "Where Deneb reads LIVE hardware prices. Official stores and authorised Singapore resellers only, one product page each, read through the page's own machine-readable price (Shopify product JSON, Apple's price object, or the og product:price meta tag). No marketplace scraping. `kind: link` = the seller blocks automated reads, so the link is listed with no price. `ships_from: overseas` = priced abroad and imported: landed cost adds Singapore GST at import (gst_rate) and is still BEFORE shipping. The daily Deneb landscape job runs deneb.prices.refresh() and publishes the result in landscape.json, which altronis.sg reads.",
  "gst_rate": 0.09,
  "items": [
   {
@@ -10,14 +10,43 @@
    "label": "AMD Ryzen AI Max+ 395 mini PC, 128 GB",
    "class": "small",
    "sources": [
-    {"seller": "GMKtec (EVO-X2)", "trust": "Official store", "kind": "shopify", "ships_from": "overseas",
+    {
+     "seller": "GMKtec (EVO-X2)",
+     "trust": "Official store",
+     "kind": "shopify",
+     "ships_from": "overseas",
      "url": "https://www.gmktec.com/products/amd-ryzen%e2%84%a2-ai-max-395-evo-x2-ai-mini-pc",
-     "variant_match": ["128gb"], "variant_exclude": ["coding plan"]},
-    {"seller": "Bosgame (M5)", "trust": "Official store", "kind": "shopify", "ships_from": "overseas",
+     "variant_match": [
+      "128gb"
+     ],
+     "variant_exclude": [
+      "coding plan"
+     ]
+    },
+    {
+     "seller": "Bosgame (M5)",
+     "trust": "Official store",
+     "kind": "shopify",
+     "ships_from": "overseas",
      "url": "https://www.bosgame.com/products/bosgame-m5-ai-mini-desktop-ryzen-ai-max-395-96gb-128gb-2tb",
-     "variant_match": ["128g"]},
-    {"seller": "ALLSTARS (Singapore)", "trust": "Local distributor, 3yr warranty", "kind": "meta", "ships_from": "sg",
-     "url": "https://allstars.com.sg/shop/pc/pc-complete/gmktec-evo-x2-ai-mini-pc-amd-ryzen-ai-max-395-128gb-lpddr5-2tb-gen4-ssd-2-5g-lan-wifi7-licensed-windows-11-pro/"}
+     "variant_match": [
+      "128g"
+     ]
+    },
+    {
+     "seller": "ALLSTARS (Singapore)",
+     "trust": "Local distributor, 3yr warranty",
+     "kind": "meta",
+     "ships_from": "sg",
+     "url": "https://allstars.com.sg/shop/pc/pc-complete/gmktec-evo-x2-ai-mini-pc-amd-ryzen-ai-max-395-128gb-lpddr5-2tb-gen4-ssd-2-5g-lan-wifi7-licensed-windows-11-pro/"
+    },
+    {
+     "seller": "Framework (Desktop)",
+     "trust": "Official store, configure to order",
+     "kind": "link",
+     "ships_from": "overseas",
+     "url": "https://frame.work/sg/en/desktop"
+    }
    ]
   },
   {
@@ -26,12 +55,27 @@
    "label": "NVIDIA GB10 box, 128 GB (DGX Spark or ASUS Ascent GX10)",
    "class": "small",
    "sources": [
-    {"seller": "SourceIT (Singapore), ASUS Ascent GX10 1 TB", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
-     "url": "https://sourceit.com.sg/products/asus-ascent-gx10-compact-desktop-ai-supercomputer-1tb-gx10-gg0007bn"},
-    {"seller": "SourceIT (Singapore), DGX Spark 4 TB", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
-     "url": "https://sourceit.com.sg/products/nvidia-dgx-spark-ai-supercomputer-4tb-940-54242-0007-000"},
-    {"seller": "Vii PC Trade (Singapore), DGX Spark 4 TB", "trust": "Local reseller, 1yr warranty", "kind": "shopify", "ships_from": "sg",
-     "url": "https://www.viipc.sg/products/nvidia-dgx-spark-ai-server-enterprise-gpu-computing-platform-4tb-128gb-ai-desktop"}
+    {
+     "seller": "SourceIT (Singapore), ASUS Ascent GX10 1 TB",
+     "trust": "Authorised reseller, local warranty, GeBIZ",
+     "kind": "shopify",
+     "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/asus-ascent-gx10-compact-desktop-ai-supercomputer-1tb-gx10-gg0007bn"
+    },
+    {
+     "seller": "SourceIT (Singapore), DGX Spark 4 TB",
+     "trust": "Authorised reseller, local warranty, GeBIZ",
+     "kind": "shopify",
+     "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/nvidia-dgx-spark-ai-supercomputer-4tb-940-54242-0007-000"
+    },
+    {
+     "seller": "Vii PC Trade (Singapore), DGX Spark 4 TB",
+     "trust": "Local reseller, 1yr warranty",
+     "kind": "shopify",
+     "ships_from": "sg",
+     "url": "https://www.viipc.sg/products/nvidia-dgx-spark-ai-server-enterprise-gpu-computing-platform-4tb-128gb-ai-desktop"
+    }
    ]
   },
   {
@@ -40,9 +84,52 @@
    "label": "Apple Mac Studio, M5 Ultra (96 GB base)",
    "class": "small",
    "sources": [
-    {"seller": "Apple (SG)", "trust": "Official store, configure to order", "kind": "apple", "ships_from": "sg",
+    {
+     "seller": "Apple (SG)",
+     "trust": "Official store, configure to order",
+     "kind": "apple",
+     "ships_from": "sg",
      "url": "https://www.apple.com/sg/shop/buy-mac/mac-studio",
-     "variant_match": ["m5ultra"]}
+     "variant_match": [
+      "m5ultra"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mac-studio-max",
+   "device": "m5-max",
+   "label": "Apple Mac Studio, M5 Max (base configs)",
+   "class": "small",
+   "sources": [
+    {
+     "seller": "Apple (SG)",
+     "trust": "Official store, configure to order",
+     "kind": "apple",
+     "ships_from": "sg",
+     "url": "https://www.apple.com/sg/shop/buy-mac/mac-studio",
+     "variant_match": [
+      "m5max"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "macbook-pro-max",
+   "device": "m5-max",
+   "label": "Apple MacBook Pro 14 or 16 inch, M5 Max (base configs)",
+   "class": "small",
+   "sources": [
+    {
+     "seller": "Apple (SG)",
+     "trust": "Official store, configure to order",
+     "kind": "apple",
+     "ships_from": "sg",
+     "url": "https://www.apple.com/sg/shop/buy-mac/macbook-pro",
+     "variant_match": [
+      "standard-m5max"
+     ]
+    }
    ]
   },
   {
@@ -51,8 +138,13 @@
    "label": "NVIDIA RTX PRO 6000 Blackwell 96 GB (card only)",
    "class": "ws",
    "sources": [
-    {"seller": "SourceIT (Singapore)", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
-     "url": "https://sourceit.com.sg/products/nvidia-rtx-pro™-6000-blackwell-workstation-edition-900-5g144-2500-000"}
+    {
+     "seller": "SourceIT (Singapore)",
+     "trust": "Authorised reseller, local warranty, GeBIZ",
+     "kind": "shopify",
+     "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/nvidia-rtx-pro™-6000-blackwell-workstation-edition-900-5g144-2500-000"
+    }
    ]
   }
  ]
