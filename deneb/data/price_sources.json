@@ -21,14 +21,16 @@
    ]
   },
   {
-   "id": "dgx-spark",
+   "id": "gb10-128",
    "device": "dgx-spark",
-   "label": "NVIDIA DGX Spark, 128 GB, 4 TB",
+   "label": "NVIDIA GB10 box, 128 GB (DGX Spark or ASUS Ascent GX10)",
    "class": "small",
    "sources": [
-    {"seller": "SourceIT (Singapore)", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
+    {"seller": "SourceIT (Singapore), ASUS Ascent GX10 1 TB", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/asus-ascent-gx10-compact-desktop-ai-supercomputer-1tb-gx10-gg0007bn"},
+    {"seller": "SourceIT (Singapore), DGX Spark 4 TB", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
      "url": "https://sourceit.com.sg/products/nvidia-dgx-spark-ai-supercomputer-4tb-940-54242-0007-000"},
-    {"seller": "Vii PC Trade (Singapore)", "trust": "Local reseller, 1yr warranty", "kind": "shopify", "ships_from": "sg",
+    {"seller": "Vii PC Trade (Singapore), DGX Spark 4 TB", "trust": "Local reseller, 1yr warranty", "kind": "shopify", "ships_from": "sg",
      "url": "https://www.viipc.sg/products/nvidia-dgx-spark-ai-server-enterprise-gpu-computing-platform-4tb-128gb-ai-desktop"}
    ]
   },
@@ -41,6 +43,16 @@
     {"seller": "Apple (SG)", "trust": "Official store, configure to order", "kind": "apple", "ships_from": "sg",
      "url": "https://www.apple.com/sg/shop/buy-mac/mac-studio",
      "variant_match": ["m5ultra"]}
+   ]
+  },
+  {
+   "id": "rtx-pro-6000",
+   "device": "rtx-pro-6000",
+   "label": "NVIDIA RTX PRO 6000 Blackwell 96 GB (card only)",
+   "class": "ws",
+   "sources": [
+    {"seller": "SourceIT (Singapore)", "trust": "Authorised reseller, local warranty, GeBIZ", "kind": "shopify", "ships_from": "sg",
+     "url": "https://sourceit.com.sg/products/nvidia-rtx-pro™-6000-blackwell-workstation-edition-900-5g144-2500-000"}
    ]
   }
  ]
