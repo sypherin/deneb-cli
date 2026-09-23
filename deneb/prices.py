@@ -188,8 +188,11 @@ def fetch_fx() -> tuple:
 def fetch_source(src: dict, usd_sgd: Optional[float], now: str) -> dict:
     rec = {k: src.get(k) for k in ("seller", "trust", "url", "ships_from")}
     rec.update({"checked": now, "ok": False})
+    kind = src.get("kind")
+    if kind == "link":  # the seller blocks automated reads: list the link, never a price
+        rec["link_only"] = True
+        return rec
     try:
-        kind = src.get("kind")
         if kind == "shopify":
             raw = parse_shopify(json.loads(_fetch(src["url"] + ".js")),
                                 src.get("variant_match"), src.get("variant_exclude"))
@@ -235,6 +238,8 @@ def refresh(cfg: Optional[dict] = None) -> dict:
     for it in cfg.get("items") or []:
         results = [fetch_source(s, usd_sgd, now) for s in it.get("sources") or []]
         for r in results:
+            if r.get("link_only"):
+                continue
             if r.get("out_of_stock"):  # a market state, not a broken feed
                 unavailable.append(f"{it['id']} / {r['seller']}: {r.get('error')}")
             elif not r["ok"]:
