@@ -163,3 +163,141 @@ def test_link_only_source_is_listed_not_fetched_and_not_an_error(monkeypatch):
     monkeypatch.setattr(pr, "fetch_fx", lambda: (1.3, "d", "u"))
     out = pr.refresh({"items": [{"id": "x", "sources": [{"seller": "F", "kind": "link", "url": "https://f/p"}]}]})
     assert out["errors"] == [] and out["unavailable"] == [] and out["items"][0]["from_sgd"] is None
+
+
+# ── throttled reads (Shopify 429s on 1, 2, 7, 8, 9 Oct 2026) ─────────────────
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+from http.server import BaseHTTPRequestHandler, HTTPServer  # noqa: E402
+
+
+def test_retry_after_parsing_and_bounds():
+    assert pr.retry_after("5", 10) == 5
+    assert pr.retry_after("0", 10) == 1          # never a zero-wait hammer
+    assert pr.retry_after("9999", 10) == pr._MAX_WAIT
+    assert pr.retry_after(None, 10) == 10
+    assert pr.retry_after("soon", 10) == 10
+    import datetime as dt
+    from email.utils import format_datetime
+    later = format_datetime(dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=30), usegmt=True)
+    assert 25 <= pr.retry_after(later, 10) <= 30
+
+
+def _serve(statuses):
+    """A real local HTTP server answering each request with the next status in `statuses`
+    (the last one repeats). Returns (base_url, hits, server)."""
+    hits = []
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            code = statuses[min(len(hits), len(statuses) - 1)]
+            hits.append(self.path)
+            self.send_response(code)
+            if code == 429:
+                self.send_header("Retry-After", "7")
+            self.end_headers()
+            self.wfile.write(b'{"currency":"SGD"}' if code == 200 else b"slow down")
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_port}", hits, srv
+
+
+def _fresh_run():
+    pr._last_hit.clear()
+    pr._currency_cache.clear()
+    pr._budget["left"] = pr._RETRY_BUDGET
+
+
+def test_fetch_retries_a_429_honouring_retry_after():
+    _fresh_run()
+    base, hits, srv = _serve([429, 200])
+    slept = []
+    try:
+        assert pr._fetch(base + "/p.js", sleep=slept.append) == '{"currency":"SGD"}'
+    finally:
+        srv.shutdown()
+    assert len(hits) == 2 and 7 in slept          # the server's Retry-After, not our default
+
+
+def test_fetch_gives_up_after_the_last_wait():
+    _fresh_run()
+    base, hits, srv = _serve([429])
+    try:
+        pr._fetch(base + "/p.js", waits=(1, 1), sleep=lambda s: None)
+        raise AssertionError("expected HTTPError")
+    except urllib.error.HTTPError as e:
+        assert e.code == 429
+    finally:
+        srv.shutdown()
+    assert len(hits) == 3                          # 1 try + 2 retries, then fail loud
+
+
+def test_fetch_does_not_retry_a_404():
+    _fresh_run()
+    base, hits, srv = _serve([404])
+    try:
+        pr._fetch(base + "/gone.js", sleep=lambda s: None)
+        raise AssertionError("expected HTTPError")
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
+    finally:
+        srv.shutdown()
+    assert len(hits) == 1
+
+
+def test_retry_budget_caps_total_waiting():
+    _fresh_run()
+    pr._budget["left"] = 5                         # less than the server's Retry-After: 7
+    base, hits, srv = _serve([429, 200])
+    try:
+        pr._fetch(base + "/p.js", sleep=lambda s: None)
+        raise AssertionError("expected HTTPError")
+    except urllib.error.HTTPError:
+        pass
+    finally:
+        srv.shutdown()
+    assert len(hits) == 1
+
+
+def test_requests_to_one_host_are_spaced():
+    _fresh_run()
+    base, hits, srv = _serve([200])
+    slept = []
+    try:
+        pr._fetch(base + "/a.js", sleep=slept.append)
+        pr._fetch(base + "/b.js", sleep=slept.append)
+    finally:
+        srv.shutdown()
+    assert len(slept) == 1 and 0 < slept[0] <= pr._HOST_GAP
+
+
+def test_store_currency_read_once_per_store():
+    _fresh_run()
+    calls = []
+    real = pr._fetch
+    pr._fetch = lambda url, **k: calls.append(url) or '{"currency":"SGD"}'
+    try:
+        for h in ("a", "b", "c"):
+            assert pr._shopify_currency(f"https://shop.sg/products/{h}") == "SGD"
+        assert pr._shopify_currency("https://other.sg/products/x") == "SGD"
+    finally:
+        pr._fetch = real
+    assert calls == ["https://shop.sg/cart.js", "https://other.sg/cart.js"]
+
+
+def test_failed_currency_read_is_not_cached():
+    _fresh_run()
+    real = pr._fetch
+
+    def boom(url, **k):
+        raise urllib.error.URLError("down")
+    pr._fetch = boom
+    try:
+        assert pr._shopify_currency("https://shop.sg/products/a") is None
+    finally:
+        pr._fetch = real
+    assert "https://shop.sg" not in pr._currency_cache

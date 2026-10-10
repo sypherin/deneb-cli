@@ -20,6 +20,9 @@ import datetime as _dt
 import json
 import os
 import re
+import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Optional
@@ -156,21 +159,74 @@ def summarise_item(item: dict, results: list, gst_rate: float) -> dict:
 
 
 # ── I/O ───────────────────────────────────────────────────────────────────────
-def _fetch(url: str, timeout: int = 25) -> str:
+# Shopify's edge answers 429 on some mornings to every store at once (5 of the 10 daily
+# runs from 1 to 10 Oct 2026 lost the GMKtec, Bosgame, SourceIT and Vii PC prices), and
+# the same URL reads fine minutes later. So: wait and retry a throttled read, honouring
+# Retry-After, and space requests to one host instead of firing them back to back.
+_RETRY_STATUS = (429, 503)
+_RETRY_WAITS = (10, 30)   # seconds before the 2nd and 3rd attempt, unless the server says
+_MAX_WAIT = 60
+_HOST_GAP = 2.0           # seconds between two requests to the same host
+_RETRY_BUDGET = 180.0     # total retry waiting per run: past it, a throttled read fails
+_last_hit: dict = {}
+_currency_cache: dict = {}
+_budget = {"left": _RETRY_BUDGET}
+
+
+def retry_after(value: Optional[str], default: float) -> float:
+    """Seconds to wait from a Retry-After header (delta-seconds or an HTTP date), kept
+    within 1.._MAX_WAIT; `default` when absent or unreadable. Pure, unit-tested."""
+    if not value:
+        return default
+    value = value.strip()
+    if value.isdigit():
+        secs = float(value)
+    else:
+        try:
+            from email.utils import parsedate_to_datetime
+            secs = (parsedate_to_datetime(value) - _dt.datetime.now(_dt.timezone.utc)).total_seconds()
+        except (TypeError, ValueError):
+            return default
+    return min(max(secs, 1.0), float(_MAX_WAIT))
+
+
+def _fetch(url: str, timeout: int = 25, waits=_RETRY_WAITS, sleep=time.sleep) -> str:
     # store URLs can carry non-ASCII (a "™" in a product handle); percent-encode it,
     # leaving existing escapes and URL punctuation alone
     url = urllib.parse.quote(url, safe=":/?&=%#+,;@!$'()*[]~")
-    req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept-Language": "en-SG,en;q=0.9"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+    host = urllib.parse.urlsplit(url).netloc
+    for attempt in range(len(waits) + 1):
+        gap = _HOST_GAP - (time.monotonic() - _last_hit.get(host, -_HOST_GAP))
+        if gap > 0:
+            sleep(gap)
+        _last_hit[host] = time.monotonic()
+        req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept-Language": "en-SG,en;q=0.9"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            if e.code not in _RETRY_STATUS or attempt == len(waits):
+                raise
+            wait = retry_after(e.headers.get("Retry-After") if e.headers else None, waits[attempt])
+            if wait > _budget["left"]:
+                raise
+            _budget["left"] -= wait
+            print(f"[prices] {host} HTTP {e.code}, retry {attempt + 1}/{len(waits)} in {wait:.0f}s",
+                  file=sys.stderr, flush=True)
+            sleep(wait)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _shopify_currency(url: str) -> Optional[str]:
+    """The store's currency from /cart.js, read once per store per run (SourceIT lists
+    three products; asking three times only adds to the throttling above)."""
     root = re.match(r"(https?://[^/]+)", url).group(1)
-    try:
-        return json.loads(_fetch(root + "/cart.js")).get("currency")
-    except Exception:  # noqa: BLE001
-        return None
+    if root not in _currency_cache:
+        try:
+            _currency_cache[root] = json.loads(_fetch(root + "/cart.js")).get("currency")
+        except Exception:  # noqa: BLE001
+            return None    # not cached: the next product from this store asks again
+    return _currency_cache[root]
 
 
 def fetch_fx() -> tuple:
@@ -229,6 +285,8 @@ def refresh(cfg: Optional[dict] = None) -> dict:
     """Read every source now. Returns the publishable block (JSON-safe) with an errors
     list; one dead page never sinks the rest."""
     cfg = cfg or load_sources()
+    _currency_cache.clear()
+    _budget["left"] = _RETRY_BUDGET
     now = _dt.datetime.now(SGT).isoformat(timespec="minutes")
     usd_sgd, fx_date, fx_src = fetch_fx()
     gst = float(cfg.get("gst_rate", 0.09))
