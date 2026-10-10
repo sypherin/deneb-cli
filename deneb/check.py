@@ -11,6 +11,7 @@ routine 90%, LLM on demand for the weird 10%.
 """
 from __future__ import annotations
 
+import os
 import re
 
 from . import tools, ui
@@ -90,14 +91,51 @@ def _chk_service():
     return ("Model service enabled + running", True, f"{who} serving :8001{boot}", "")
 
 
-def _chk_gpu():
-    # Inspect the ACTUAL serving process's cmdline for GPU-offload flags — using the proc
-    # name that owns :8001, not a hardcoded "llama-server".
-    _, proc = _port_owner(8001)
+def _serving_cmdline() -> str:
+    """The command line of the process that owns :8001, picked by PID. A box often runs
+    several llama-servers (a judge on :8005, a second model on :8056, a wrapper script
+    whose args name the binary), so the first pgrep line is not reliably the one serving."""
+    pid, proc = _port_owner(8001)
     ps = _probe(f"pgrep -af {proc}") if proc and proc != "?" else (
         _probe("pgrep -af llama") or _probe("pgrep -af ollama") or _probe("pgrep -af vllm"))
+    lines = [ln.strip() for ln in ps.splitlines() if re.match(r"\s*\d+\s", ln)]
+    for ln in lines:
+        if pid and ln.split(None, 1)[0] == pid:
+            return ln
+    for ln in lines:
+        if re.search(r"--port[ =]8001(?!\d)", ln):
+            return ln
+    return lines[0] if lines else ""
+
+
+# Libraries that show which accelerator a llama.cpp build uses. A box can serve from a
+# bundled build with no rocminfo / nvidia-smi on PATH, so the toolkit test alone gave a
+# false "CPU" on a GPU box (2026-10-10, Strix serving Qwen3.8-27B on ROCm).
+_ACCEL_LIBS = (("cuda", ("libcudart", "libcublas", "libggml-cuda")),
+               ("rocm", ("libamdhip64", "libhipblas", "librocblas", "libggml-hip")),
+               ("vulkan", ("libvulkan", "libggml-vulkan")))
+
+
+def _accel_of_binary(cmdline: str) -> str:
+    """Accelerators the serving binary is built with: its linked libraries (ldd lists them
+    even when they resolve "not found" outside the service's environment), plus the ggml
+    backend libraries beside it, which GGML_BACKEND_DL builds load at runtime."""
+    parts = cmdline.split()
+    binary = parts[1] if len(parts) > 1 else ""
+    if not binary.startswith("/"):
+        return ""
+    libs = _probe(f"ldd {binary}") + "\n" + _probe(
+        f"find {binary.rsplit('/', 1)[0]} -maxdepth 1 -name libggml-*")
+    return "+".join(name for name, keys in _ACCEL_LIBS if any(k in libs for k in keys))
+
+
+def _chk_gpu():
+    # Inspect the ACTUAL serving process's cmdline for GPU-offload flags — using the
+    # process that owns :8001, not a hardcoded "llama-server".
+    ps = _serving_cmdline()
     ngl = any(f in ps for f in ("-ngl", "--gpu-layers", "n_gpu_layers", "--n-gpu-layers"))
-    accel = "cuda" if _has("nvidia-smi") else ("vulkan/rocm" if _has("rocminfo") else "")
+    accel = _accel_of_binary(ps) or (
+        "cuda" if _has("nvidia-smi") else ("vulkan/rocm" if _has("rocminfo") else ""))
     ok = ngl and bool(accel)
     ev = (f"GPU offload on, {accel}") if ok else ("running on CPU (no GPU-offload flag)" if not ngl else "no GPU toolkit found")
     return ("Built with GPU accelerator (not CPU)", ok, ev,
@@ -105,12 +143,32 @@ def _chk_gpu():
             "Strix) and run with -ngl 99")
 
 
+def _gib(nbytes: int) -> str:
+    return f"{nbytes / 2**30:.1f} GiB"
+
+
 def _chk_model_file():
+    # 1. The path the serving process was started with (-m / --model). /v1/models often
+    #    reports an alias ("qwen3.8-27b"), not a path, so it can't be the only source.
+    m = re.search(r"\s(?:-m|--model)[ =](/\S+)", " " + _serving_cmdline())
+    if m:
+        path = m.group(1)
+        st = _probe(f"stat -L -c %s {path}").strip()
+        if st.isdigit():
+            return ("Model file present", True, f"{path.split('/')[-1]} ({_gib(int(st))})", "")
+        if "No such file" in st:
+            return ("Model file present", False,
+                    f"{path.split('/')[-1]} is loaded but no longer on disk — the server "
+                    "will fail on its next restart",
+                    f"put the model back at {path} (or point -m at where it is now)")
+    # 2. /v1/models naming an absolute .gguf path.
     mv = _probe("curl -s localhost:8001/v1/models")
     m = re.search(r'"id"\s*:\s*"(/[^"]+\.gguf)"', mv)
     if m and "does not exist" not in _read(m.group(1)):
         return ("Model file present", True, m.group(1).split("/")[-1], "")
-    found = _probe("find ~/models -maxdepth 2 -name '*.gguf'")
+    # 3. The conventional models directory. Expanded here: commands run without a shell,
+    #    so a literal "~/models" was never found.
+    found = _probe(f"find {os.path.expanduser('~/models')} -maxdepth 2 -name '*.gguf'")
     ok = ".gguf" in found
     return ("Model file present", ok, (found.splitlines()[0].split("/")[-1] if ok else "no .gguf found"),
             "download the model .gguf into your models directory (see runbook §Download Model)")
