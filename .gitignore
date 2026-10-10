@@ -12,3 +12,7 @@ eval/
 *.log
 .deneb_token
 restore-kit/
+
+# planning docs stay local (they name engine internals)
+.planning/
+LEVELUP-PLAN.md
