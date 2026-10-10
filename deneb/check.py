@@ -91,11 +91,57 @@ def _chk_service():
     return ("Model service enabled + running", True, f"{who} serving :8001{boot}", "")
 
 
+def _mnt_ns(pid: str) -> str:
+    """The mount namespace of `pid` ('self' = deneb's own), or '' when it can't be read
+    (another user's process)."""
+    ns = _probe(f"readlink /proc/{pid}/ns/mnt").strip()
+    return ns if ns.startswith("mnt:") else ""
+
+
+def _where(pid: str) -> str:
+    """'host' or 'container' for a process, '' when unknown. A container's paths are its
+    own: /models/x.gguf inside it is not /models/x.gguf on the host."""
+    me, it = _mnt_ns("self"), _mnt_ns(pid) if pid else ""
+    if not (me and it):
+        return ""
+    return "host" if me == it else "container"
+
+
+# What owns a host port when the model runs in Docker or podman: the runtime's port
+# forwarder, not the model server. The server is another process, inside the container.
+_PORT_PROXIES = {"rootlessport", "rootlesskit", "docker-proxy", "conmon", "pasta", "slirp4netns"}
+_SHELLS = {"bash", "sh", "dash", "zsh", "env", "timeout"}
+# The runtime's own processes: rootless podman runs in a namespace of its own, so
+# "not deneb's mount namespace" alone would pick `podman run` itself.
+_RUNTIMES = {"podman", "docker", "nerdctl", "conmon", "crun", "runc", "catatonit",
+             "containerd-shim", "containerd-shim-runc-v2"}
+
+
+def _container_server() -> str:
+    """The model server inside a container: a process whose args name a .gguf (or a vllm /
+    ollama server) and that runs in a different mount namespace from deneb. Targeted
+    pgreps, not one `ps` of every process: tool output is capped at 8000 chars."""
+    found = []
+    for pat in (r"\.gguf", "vllm", "ollama"):
+        for ln in _probe(f"pgrep -af '{pat}'").splitlines():
+            ln = ln.strip()
+            if (re.match(r"\d+\s", ln) and ln not in found
+                    and os.path.basename(ln.split()[1]) not in _RUNTIMES | _PORT_PROXIES
+                    and _where(ln.split()[0]) == "container"):
+                found.append(ln)
+        if found:
+            break
+    found.sort(key=lambda ln: os.path.basename(ln.split()[1]) in _SHELLS)  # wrapper scripts last
+    return found[0] if found else ""
+
+
 def _serving_cmdline() -> str:
     """The command line of the process that owns :8001, picked by PID. A box often runs
     several llama-servers (a judge on :8005, a second model on :8056, a wrapper script
     whose args name the binary), so the first pgrep line is not reliably the one serving."""
     pid, proc = _port_owner(8001)
+    if proc in _PORT_PROXIES:
+        return _container_server()
     ps = _probe(f"pgrep -af {proc}") if proc and proc != "?" else (
         _probe("pgrep -af llama") or _probe("pgrep -af ollama") or _probe("pgrep -af vllm"))
     lines = [ln.strip() for ln in ps.splitlines() if re.match(r"\s*\d+\s", ln)]
@@ -129,18 +175,59 @@ def _accel_of_binary(cmdline: str) -> str:
     return "+".join(name for name, keys in _ACCEL_LIBS if any(k in libs for k in keys))
 
 
+def _accel_loaded(pid: str) -> str:
+    """Accelerator runtimes the serving process has actually loaded, from its memory map.
+    Works for a server inside a container, where the binary path is not a host path."""
+    if not pid:
+        return ""
+    keys = " ".join(f"-e {k}" for _, ks in _ACCEL_LIBS for k in ks)
+    libs = _probe(f"grep -o {keys} /proc/{pid}/maps")
+    return "+".join(name for name, ks in _ACCEL_LIBS if any(k in libs for k in ks))
+
+
+# The offload flag (not the draft-model ones: -ngld, --spec-draft-ngl, --gpu-layers-draft).
+_NGL = re.compile(r"(?<![\w-])(?:-ngl|--gpu-layers|--n-gpu-layers|n_gpu_layers)(?![\w-])"
+                  r"(?:[ =:]+(-?\d+|auto|all))?")
+
+
 def _chk_gpu():
-    # Inspect the ACTUAL serving process's cmdline for GPU-offload flags — using the
-    # process that owns :8001, not a hardcoded "llama-server".
+    # Inspect the ACTUAL serving process (the one behind :8001, not a hardcoded
+    # "llama-server"): its offload flag, and the accelerator it loaded or links.
+    label = "Built with GPU accelerator (not CPU)"
     ps = _serving_cmdline()
-    ngl = any(f in ps for f in ("-ngl", "--gpu-layers", "n_gpu_layers", "--n-gpu-layers"))
-    accel = _accel_of_binary(ps) or (
+    if not ps:
+        return (label, False, "couldn't see the process serving :8001 (another user's?)",
+                "ask deneb \"which process serves :8001 and is it on the GPU\" "
+                "(it can't read a process another user owns)")
+    pid, binary = ps.split()[0], (ps.split() + [""])[1]
+    loaded = _accel_loaded(pid)
+    accel = loaded or _accel_of_binary(ps) or (
         "cuda" if _has("nvidia-smi") else ("vulkan/rocm" if _has("rocminfo") else ""))
-    ok = ngl and bool(accel)
-    ev = (f"GPU offload on, {accel}") if ok else ("running on CPU (no GPU-offload flag)" if not ngl else "no GPU toolkit found")
-    return ("Built with GPU accelerator (not CPU)", ok, ev,
-            "rebuild llama.cpp with the accelerator (CUDA: -DGGML_CUDA=ON; ROCm/Vulkan on "
-            "Strix) and run with -ngl 99")
+    m = _NGL.search(ps)
+    llama = os.path.basename(binary).startswith("llama")
+    if m:
+        offload = m.group(1) not in ("0", "-0")          # -ngl 0 = every layer on CPU
+    else:
+        # vLLM and custom engines have no flag: on the GPU when their process has the GPU
+        # runtime loaded. llama.cpp without -ngl is left to the build's default, which is
+        # "auto" (offload) on current builds and 0 (CPU) on older ones, so it can't be
+        # read from here.
+        offload = bool(loaded) and not llama
+    ok = offload and bool(accel)
+    if ok:
+        ev = f"GPU offload on, {accel}" if m else f"{os.path.basename(binary)} has the {accel} runtime loaded"
+    elif m and not offload:
+        ev = "running on CPU (-ngl 0)"
+    elif not m and loaded and llama:
+        ev = "no -ngl flag: offload is left to the build default (auto on current llama.cpp, CPU on older)"
+    else:
+        ev = "running on CPU (no GPU-offload flag)" if not offload else "no GPU toolkit found"
+    if accel and not offload:
+        fix = "start the server with -ngl 99 (all layers on the GPU), not the build's default"
+    else:
+        fix = ("rebuild llama.cpp with the accelerator (CUDA: -DGGML_CUDA=ON; ROCm/Vulkan on "
+               "Strix) and run with -ngl 99")
+    return (label, ok, ev, fix)
 
 
 def _gib(nbytes: int) -> str:
@@ -150,13 +237,21 @@ def _gib(nbytes: int) -> str:
 def _chk_model_file():
     # 1. The path the serving process was started with (-m / --model). /v1/models often
     #    reports an alias ("qwen3.8-27b"), not a path, so it can't be the only source.
-    m = re.search(r"\s(?:-m|--model)[ =](/\S+)", " " + _serving_cmdline())
+    #    Servers that don't take -m (custom engines) still name the .gguf somewhere.
+    ps = _serving_cmdline()
+    m = (re.search(r"\s(?:-m|--model)[ =](/\S+)", " " + ps)
+         or re.search(r"\s(/\S+\.gguf)(?!\S)", " " + ps))
     if m:
-        path = m.group(1)
-        st = _probe(f"stat -L -c %s {path}").strip()
+        path, pid = m.group(1), ps.split()[0]
+        where = _where(pid)
+        # A container's /models/x.gguf is only reachable from the host through the
+        # process's own root.
+        st = _probe(f"stat -L -c %s {f'/proc/{pid}/root{path}' if where == 'container' else path}").strip()
         if st.isdigit():
-            return ("Model file present", True, f"{path.split('/')[-1]} ({_gib(int(st))})", "")
-        if "No such file" in st:
+            return ("Model file present", True, f"{path.split('/')[-1]} ({_gib(int(st))})"
+                    + (", in a container" if where == "container" else ""), "")
+        # "Deleted" only when we know which filesystem the path lives in.
+        if "No such file" in st and where:
             return ("Model file present", False,
                     f"{path.split('/')[-1]} is loaded but no longer on disk — the server "
                     "will fail on its next restart",

@@ -175,6 +175,7 @@ STRIX = {
     f"stat -L -c %s {STRIX_MODEL}": "14562236384",
     "curl -s localhost:8001/v1/models": '{"data":[{"id":"qwen3.8-27b"}]}',  # an alias, not a path
     "models -maxdepth 2": "",
+    "/ns/mnt": "mnt:[4026531840]",          # a native server: same mount namespace as deneb
 }
 
 
@@ -196,6 +197,28 @@ def test_gpu_judged_on_the_serving_process_only():
     _install({**STRIX, "pgrep -af llama-server": pgrep})
     _, ok, ev, _ = check._chk_gpu()
     assert ok is False and "CPU" in ev
+
+
+def test_llama_without_ngl_is_not_passed_on_the_build_default():
+    # Current llama.cpp defaults -ngl to auto, older builds to 0: with the GPU runtime
+    # loaded and no flag, the honest answer is "pin it", not "on CPU" and not a pass.
+    pgrep = STRIX_PGREP.replace("-dev ROCm0 -ngl 99 ", "")
+    _install({**STRIX, "pgrep -af llama-server": pgrep, "/proc/1925615/maps": "libamdhip64\n"})
+    _, ok, ev, fix = check._chk_gpu()
+    assert ok is False and "build default" in ev and "-ngl 99" in fix
+
+
+def test_ngl_zero_is_cpu():
+    _install({**STRIX, "pgrep -af llama-server": STRIX_PGREP.replace("-ngl 99 -np", "-ngl 0 -np")})
+    _, ok, ev, _ = check._chk_gpu()
+    assert ok is False and "-ngl 0" in ev
+
+
+def test_draft_model_flag_is_not_the_offload_flag():
+    pgrep = STRIX_PGREP.replace("-dev ROCm0 -ngl 99 ", "-ngld 99 ")
+    _install({**STRIX, "pgrep -af llama-server": pgrep})
+    _, ok, _, _ = check._chk_gpu()
+    assert ok is False
 
 
 def test_cpu_only_build_with_offload_flag_still_fails():
@@ -223,6 +246,83 @@ def test_model_file_unreadable_path_falls_back_to_models_dir():
               "models -maxdepth 2": "/home/x/models/other.gguf"})
     _, ok, ev, _ = check._chk_model_file()
     assert ok is True and ev == "other.gguf"
+
+
+def test_model_file_missing_in_an_unknown_namespace_is_not_called_deleted():
+    # Another user's process: its /proc entries can't be read, so a path that is missing
+    # from deneb's view may still exist in the server's. Fall through, don't accuse.
+    mapping = {k: v for k, v in STRIX.items() if k != "/ns/mnt"}
+    mapping[f"stat -L -c %s {STRIX_MODEL}"] = "[stderr]\nstat: No such file or directory"
+    _install(mapping)
+    _, ok, ev, _ = check._chk_model_file()
+    assert ok is False and "next restart" not in ev
+
+
+# ── the model in a rootless container: the port belongs to the runtime's forwarder ──
+HOST_NS, CT_NS = "mnt:[4026531832]", "mnt:[4026533311]"
+CT_MODEL = "/models/model-Q4.gguf"
+CT = {
+    "ss -ltnp": ('LISTEN 0 4096  127.0.0.1:8001  0.0.0.0:*  users:(("rootlessport",pid=5001,fd=10))\n'
+                 'LISTEN 0 512   127.0.0.1:8005  0.0.0.0:*  users:(("llama-server",pid=5300,fd=8))\n'),
+    "pgrep -af '\\.gguf'": (
+        f"5010 /bin/bash /home/x/bin/load-guard.sh podman run --rm -p 127.0.0.1:8001:9000 img --weights {CT_MODEL}\n"
+        f"5020 podman run --rm -p 127.0.0.1:8001:9000 img --weights {CT_MODEL}\n"
+        f"5090 /bin/sh /entrypoint.sh --weights {CT_MODEL}\n"
+        f"5100 /usr/local/bin/model_serve --weights {CT_MODEL} --port 9000 --ctx 131072\n"
+        "5300 /home/x/llama.cpp/build/bin/llama-server -m /home/x/models/judge.gguf --port 8005 -ngl 99\n"),
+    "readlink /proc/self/ns/mnt": HOST_NS,
+    "readlink /proc/5020/ns/mnt": "mnt:[4026533100]",   # rootless podman: a namespace of its own
+    "readlink /proc/5090/ns/mnt": CT_NS,
+    "readlink /proc/5100/ns/mnt": CT_NS,
+    "/ns/mnt": HOST_NS,                                   # the wrappers and the judge: host side
+    "/proc/5100/maps": "libamdhip64\nlibhipblas\nlibhipblas\n",
+    f"stat -L -c %s /proc/5100/root{CT_MODEL}": "93682583296",
+    "which nvidia-smi": "[stderr]\nwhich: no nvidia-smi in (/usr/bin)",
+    "which rocminfo": "[stderr]\nwhich: no rocminfo in (/usr/bin)",
+    "curl -s localhost:8001/v1/models": '{"data":[{"id":"local-model"}]}',
+    "models -maxdepth 2": "",
+}
+
+
+def test_container_server_found_behind_the_port_forwarder():
+    # Not the forwarder, not the host-side wrapper, not `podman run` (which sits in a mount
+    # namespace of its own), not the judge, not the entrypoint shell.
+    _install(CT)
+    assert check._serving_cmdline().startswith("5100 /usr/local/bin/model_serve")
+
+
+def test_container_gpu_read_from_the_runtime_it_loaded():
+    _install(CT)
+    _, ok, ev, _ = check._chk_gpu()
+    assert ok is True, ev                   # was "running on CPU (no GPU-offload flag)"
+    assert "rocm" in ev and "cuda" not in ev
+
+
+def test_container_gpu_without_a_runtime_is_cpu():
+    _install({**CT, "/proc/5100/maps": ""})
+    _, ok, ev, _ = check._chk_gpu()
+    assert ok is False and "CPU" in ev
+
+
+def test_container_model_file_read_through_the_process_root():
+    _install(CT)
+    _, ok, ev, _ = check._chk_model_file()
+    assert ok is True, ev                   # was "no .gguf found"
+    assert ev == "model-Q4.gguf (87.2 GiB), in a container"
+
+
+def test_container_model_file_deleted_under_a_running_server():
+    _install({**CT, f"stat -L -c %s /proc/5100/root{CT_MODEL}":
+              "[stderr]\nstat: No such file or directory"})
+    _, ok, ev, fix = check._chk_model_file()
+    assert ok is False and "next restart" in ev and CT_MODEL in fix
+
+
+def test_container_server_not_visible_says_so():
+    _install({**CT, "pgrep -af '\\.gguf'": ""})
+    assert check._serving_cmdline() == ""
+    _, ok, ev, _ = check._chk_gpu()
+    assert ok is False and "couldn't see" in ev
 
 
 def test_models_dir_fallback_expands_home():
