@@ -178,3 +178,69 @@ if __name__ == "__main__":
             print(f"  ERR  {fn.__name__}: {e!r}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     sys.exit(1 if failed else 0)
+
+
+# ── #38: a tight pick is never #1 and never gets the green tick ───────────────────────────
+def _model(name, params, quants, caps=("coding", "general")):
+    from deneb.models_catalog import Model, Quant
+    return Model(name=name, params_b=params, architecture="dense", active_params_b=None,
+                 capabilities=list(caps), quants=[Quant(*q) for q in quants], gguf_repo="x/" + name,
+                 notes="")
+
+
+def test_tight_pick_is_never_first_when_a_comfortable_one_exists():
+    # Budget 100000 MB. The big model needs 100000-4820: headroom 4820 < 10% of need (the
+    # documented KV allowance), so it is tight. The smaller one leaves plenty.
+    big = _model("Big-70B", 70, [("Q4_K_M", 86300, 4.85)])
+    small = _model("Small-8B", 8, [("Q4_K_M", 5000, 4.85)])
+    recs = recommend(cuda_box(100000), "coding", top_n=2, catalog=[big, small])
+    assert recs[0].model.name == "Small-8B"
+    assert recs[1].model.name == "Big-70B" and recs[1].fit.tight is True
+    assert recs[0].fit.tight is False
+
+
+def test_a_model_prefers_a_smaller_quant_that_leaves_headroom():
+    m = _model("M-30B", 30, [("Q4_K_M", 30000, 4.85), ("Q8_0", 55000, 8.5)])
+    recs = recommend(cuda_box(60000), "coding", top_n=1, catalog=[m])
+    assert recs[0].quant.name == "Q4_K_M" and recs[0].fit.tight is False
+
+
+def test_a_tight_pick_that_would_otherwise_rank_first_is_demoted():
+    # Both fit and neither is very-slow, and the tight one is the MORE capable (14B vs 7B), so
+    # only the comfortable-first key keeps it from #1. Guards recommend._rank_key.
+    big = _model("Big-14B", 14, [("Q4_K_M", 18000, 4.85)])
+    small = _model("Small-7B", 7, [("Q4_K_M", 4500, 4.85)])
+    box = cuda_box(20000)
+    from deneb.fit import fits
+    fb, fs = fits(big, big.quants[0], box), fits(small, small.quants[0], box)
+    assert fb.fits and fb.tight and fb.expected_speed_tier != "very-slow"
+    assert fs.fits and not fs.tight and fs.expected_speed_tier != "very-slow"
+    recs = recommend(box, "coding", top_n=2, catalog=[big, small])
+    assert [r.model.name for r in recs] == ["Small-7B", "Big-14B"]
+
+
+def test_best_quant_prefers_a_roomy_quant_over_a_higher_bpw_tight_one():
+    # Q8_0 fits but is tight; Q4_K_M fits with room. Guards recommend.best_fitting_quant.
+    m = _model("M-14B", 14, [("Q4_K_M", 9000, 4.85), ("Q8_0", 18000, 8.5)])
+    box = cuda_box(20000)
+    from deneb.fit import fits
+    assert fits(m, m.quants[1], box).fits and fits(m, m.quants[1], box).tight
+    assert fits(m, m.quants[0], box).fits and not fits(m, m.quants[0], box).tight
+    recs = recommend(box, "coding", top_n=1, catalog=[m])
+    assert recs[0].quant.name == "Q4_K_M" and recs[0].fit.tight is False
+
+
+def test_cli_fit_cell_marks_tight_with_a_warning_not_a_tick():
+    from deneb import cli
+    from deneb.fit import fits
+    big = _model("Big-70B", 70, [("Q4_K_M", 86300, 4.85)])
+    fr = fits(big, big.quants[0], cuda_box(100000))
+    assert fr.fits and fr.tight and fr.headroom_mb > 2000       # the old fixed 2000 MB test said fine
+    cell = cli._fit_cell(fr)
+    assert "✓" not in cell and "⚠" in cell and "tight" in cell
+
+
+def test_why_line_gives_the_tight_reason_even_when_another_caveat_comes_first():
+    big = _model("Big-70B", 70, [("Q4_K_M", 86300, 4.85)])
+    r = recommend(strix_box(100000), "coding", top_n=1, catalog=[big])[0]
+    assert "tight fit" in r.why

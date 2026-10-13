@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deneb-cli"
-version = "0.2.0"
-description = "Deneb — Altronis's local-LLM (Neo) setup + troubleshooting agent for AI boxes"
+version = "0.4.0"
+description = "Check, set up and watch a local LLM server (llama.cpp, vLLM, Ollama, LM Studio) on your own AI box: Strix Halo, DGX Spark, any GPU"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -18,4 +18,4 @@ deneb = "deneb.cli:main"
 packages = ["deneb"]
 
 [tool.setuptools.package-data]
-deneb = ["data/*.json"]
+deneb = ["data/*.json", "docs/*.md"]

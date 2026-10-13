@@ -43,19 +43,40 @@ _QUANT_RE = re.compile(
 
 
 # ── pure ──────────────────────────────────────────────────────────────────────
-def quant_of(path: str) -> Optional[str]:
-    """Quant label of one GGUF file path, or None for files that are not model weights
-    (mmproj projectors, MTP draft heads, imatrix data)."""
+def _file_label(path: str) -> Optional[str]:
+    """The quant label exactly as one GGUF file name spells it, or None for files that are not
+    model weights (mmproj projectors, MTP draft heads, imatrix data)."""
     low = path.lower()
     base = low.rsplit("/", 1)[-1]
     if not low.endswith(".gguf") or "mmproj" in base or low.startswith("mtp/") \
             or base.startswith("mtp-") or "imatrix" in low:
         return None
     m = _QUANT_RE.search(path.rsplit("/", 1)[-1])
-    if not m:
-        return None
-    q = m.group(1).upper()
-    return q.replace("MXFP4_MOE", "MXFP4")
+    return m.group(1) if m else None
+
+
+def quant_of(path: str) -> Optional[str]:
+    """Quant label of one GGUF file path, or None for files that are not model weights.
+    The catalog's name for it: upper case, MXFP4_MOE called MXFP4."""
+    q = _file_label(path)
+    return q.upper().replace("MXFP4_MOE", "MXFP4") if q else None
+
+
+def gguf_layout(files: list) -> dict:
+    """HF tree listing -> {quant: {"parts": file count, "tag": label as the files spell it}}.
+    Setup needs both: Ollama can't pull a quant split into several files, and a download
+    filter or `find` must match the file's own label, not the catalog's name for it.
+    Deterministic, no I/O."""
+    out: dict = {}
+    for f in files or []:
+        if not isinstance(f, dict) or f.get("type") != "file":
+            continue
+        path = f.get("path") or ""
+        q = quant_of(path)
+        if q:
+            row = out.setdefault(q, {"parts": 0, "tag": _file_label(path)})
+            row["parts"] += 1
+    return out
 
 
 def parse_gguf_tree(files: list) -> tuple:
@@ -77,9 +98,10 @@ def parse_gguf_tree(files: list) -> tuple:
 
 
 def build_entry(watch: dict, total_params: Optional[int], sizes: dict, mmproj: bool,
-                fetched: str) -> Optional[dict]:
+                fetched: str, layout: Optional[dict] = None) -> Optional[dict]:
     """One catalog entry (plain dict, JSON-safe) from a watchlist row plus HF facts.
-    None when there is nothing usable (no params or no recommendable quant)."""
+    None when there is nothing usable (no params or no recommendable quant). `layout` is
+    gguf_layout's; a quant it does not cover gets no parts/tag (read back as not recorded)."""
     if not total_params or total_params <= 0:
         return None
     params_b = round(total_params / 1e9, 1)
@@ -89,7 +111,7 @@ def build_entry(watch: dict, total_params: Optional[int], sizes: dict, mmproj: b
             continue
         size_mb = int(round(b / 1e6))
         quants.append({"name": q, "size_mb": size_mb,
-                       "bpw": round(b * 8 / total_params, 2)})
+                       "bpw": round(b * 8 / total_params, 2), **(layout or {}).get(q, {})})
     if not quants:
         return None
     quants.sort(key=lambda x: x["bpw"])
@@ -106,17 +128,28 @@ def build_entry(watch: dict, total_params: Optional[int], sizes: dict, mmproj: b
     }
 
 
+def _safe_tag(tag) -> str:
+    """A recorded file label, or "" (not recorded) when it isn't one: setup pastes it into
+    shell commands, and the cache file it comes from is plain JSON anyone can edit."""
+    return tag if isinstance(tag, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", tag) else ""
+
+
 def entry_to_model(e: dict) -> Optional[Model]:
     """Catalog dict -> the Model dataclass fit()/recommend() already consume."""
     try:
-        quants = [Quant(name=q["name"], size_mb=int(q["size_mb"]), bpw=float(q["bpw"]))
+        quants = [Quant(name=q["name"], size_mb=int(q["size_mb"]), bpw=float(q["bpw"]),
+                        parts=int(q.get("parts") or 0), tag=_safe_tag(q.get("tag")))
                   for q in e["quants"]]
         notes = e.get("notes") or ""
         if e.get("mmproj"):
             notes = (notes + " Vision needs the mmproj file from the same repo.").strip()
+        caps = list(e.get("capabilities") or [])
+        # a model tagged only coding (and general) is a Coder model: recommend puts it first
+        # for coding
+        built_for = "coding" if "coding" in caps and set(caps) <= {"coding", "general"} else ""
         return Model(e["name"], float(e["params_b"]), e.get("architecture") or "dense",
-                     e.get("active_params_b"), list(e.get("capabilities") or []),
-                     quants, e["gguf_repo"], notes=notes)
+                     e.get("active_params_b"), caps,
+                     quants, e["gguf_repo"], notes=notes, built_for=built_for)
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -138,7 +171,8 @@ def fetch_entry(watch: dict, fetched: str) -> Optional[dict]:
     meta = _get(f"{HF}/api/models/{repo}?expand[]=gguf")
     tree = _get(f"{HF}/api/models/{repo}/tree/main?recursive=1")
     sizes, mmproj = parse_gguf_tree(tree)
-    return build_entry(watch, (meta.get("gguf") or {}).get("total"), sizes, mmproj, fetched)
+    return build_entry(watch, (meta.get("gguf") or {}).get("total"), sizes, mmproj, fetched,
+                       layout=gguf_layout(tree))
 
 
 def refresh(watchlist: Optional[list] = None) -> tuple:

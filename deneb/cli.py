@@ -1,33 +1,56 @@
 """deneb — CLI entry point. Subcommands: auth · logout · check; else troubleshoot."""
 from __future__ import annotations
 
-from . import __version__, client, config, loop, ui
+import re
 
-CHECK_PROMPT = (
-    "Run a complete 'am I done?' check of the Neo local-LLM stack on this box. Using "
-    "READ-ONLY checks only, verify each of: llama.cpp is built with the GPU accelerator "
-    "(not silently on CPU); the model file is present; the systemd service is enabled and "
-    "running (no 203/EXEC); curl :8001/health is actually serving; the auth gateway is up "
-    "with API-key auth + rate limiting; the cloudflared tunnel is live. "
-    "Assess against what is ACTUALLY installed — the box may run Qwen3.6 rather than the "
-    "runbook's default Gemma, so check for whichever model/service is present. "
-    "IMPORTANT: detect the gateway and tunnel by PORT and unit-PATTERN, never by a guessed "
-    "service name — service names vary per box. For the gateway: check what is serving on "
-    "the gateway port (e.g. `ss -ltn` for :8002) AND list units matching the pattern "
-    "(`systemctl --user list-units '*gateway*'`). For the tunnel: `systemctl --user "
-    "list-units '*cloudflar*' '*tunnel*'` and check for a running cloudflared process. Only "
-    "mark them ✗ if truly nothing matches. Check each component ONCE; if it isn't there, "
-    "mark it ✗ and move on — do not search many paths. Be efficient. Then give a clear ✓/✗ "
-    "checklist with the exact fix for anything failing, and tell me plainly whether this box "
-    "has reached the working Neo Altronis state or exactly what's left."
-)
+from . import __version__, brain, client, config, freecmds, loop, net, tokenreq, ui, version
+from .colour import Palette
+
+_C = Palette(g="green", d="dim", b="bold", z="reset", teal="teal", amber="amber", gold="gold")
+
+_FREE_HINT = freecmds.hint()
 
 
-def _require_auth() -> bool:
-    if not config.get_token():
-        ui.error("not signed in — run:  deneb auth --token <your-token>")
-        return False
-    return True
+def _prepare(flag=None, model=None, key_env=None, image=None):
+    """Poll a pending token request once, pick the brain, print the one-time notices, and point
+    the client at it. Returns the Brain, or None after printing why there isn't one."""
+    if key_env is not None and not brain.valid_key_env(key_env):
+        ui.error(brain.KEY_ENV_REFUSAL)
+        return None
+    _poll_pending()
+    try:
+        b = brain.resolve(flag, model, key_env)
+    except client.DenebError as e:
+        ui.error(str(e))
+        return None
+    if b is None:
+        note = brain.discovery_note()
+        if note and "needs an API key" in note:     # a server is there; it wants a key
+            ui.error(note[0].upper() + note[1:])
+        else:
+            ui.error(brain.NO_BRAIN_MESSAGE)
+        ui.info(_FREE_HINT)
+        return None
+    if b.kind == "altronis" and not config.get_token():
+        ui.error("the Altronis brain needs a token: deneb auth --request "
+                 "(or deneb auth --token <token>). " + _FREE_HINT)
+        return None
+    client.set_brain(b)
+    notice = brain.privacy_notice(b)
+    if notice:                  # before the first request, which already carries the key
+        ui.info(notice)
+    for line in brain.preflight(b, pending=bool(config.load_request())):
+        ui.info(line)
+    return b
+
+
+def _poll_pending() -> None:
+    """A token request is waiting: ask once whether it has been decided. Never blocks a chat."""
+    if not config.load_request():
+        return
+    state, msg = tokenreq.check_once(timeout=net.POLL_TIMEOUT)
+    if state not in ("pending", "error"):      # only `deneb auth --check` reports a dead network
+        ui.info(msg)
 
 
 def _flag(argv: list[str], name: str) -> str | None:
@@ -40,10 +63,90 @@ def _flag(argv: list[str], name: str) -> str | None:
     return None
 
 
+def _ask(label: str, given, optional: bool = False) -> str:
+    if given is not None:
+        return given.strip()
+    try:
+        return input(f"{label}{' (optional)' if optional else ''}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
+
+
+def _pending_line(req: dict) -> str:
+    when = (req.get("created") or "")[:10]
+    who = req.get("email") or ""
+    bits = [b for b in (f"sent {when}" if when else "", who) if b]
+    return " (" + ", ".join(bits) + ")" if bits else ""
+
+
+def cmd_auth_request(argv: list[str]) -> int:
+    pending = config.load_request()
+    replace = "--replace" in argv
+    if pending and not replace:
+        ui.error(f"a token request is already pending{_pending_line(pending)}. check it: "
+                 "deneb auth --check. to send a new one anyway: deneb auth --request --replace "
+                 "(the first can then no longer be claimed).")
+        return 1
+    prompting = any(_flag(argv, f) is None for f in ("--name", "--email", "--box"))
+    name = _ask("your name", _flag(argv, "--name"))
+    email = _ask("your email", _flag(argv, "--email"))
+    box = _ask("what box (e.g. Strix Halo 128GB, Ollama)", _flag(argv, "--box"))
+    why_flag = _flag(argv, "--why")
+    why = _ask("what you want it for", why_flag, optional=True) if (prompting or why_flag is not None) else ""
+    if not (1 <= len(name) <= 80):
+        ui.error("a name is needed (up to 80 characters)")
+        return 2
+    if not tokenreq.valid_email(email):
+        ui.error("that doesn't look like an email address")
+        return 2
+    if not (1 <= len(box) <= 120):
+        ui.error("say what box this is (up to 120 characters)")
+        return 2
+    why = why[:500]
+    engine = _flag(argv, "--engine") or config.get_engine()
+    print(f"sending this to Altronis ({engine}), plus a hash of a secret that stays on this box.")
+    print("nothing else:")
+    print(f"  name:   {name}")
+    print(f"  email:  {email}")
+    print(f"  box:    {box}")
+    print(f"  reason: {why or '(none)'}")
+    print(f"a person approves it, usually the same day (SGT). {tokenreq.REVIEW_LINE}.")
+    if pending:
+        print("warning: you chose --replace, so the first request can no longer be claimed.")
+    try:
+        tokenreq.submit(name, email, box, why, engine=engine)
+    except tokenreq.RequestError as e:
+        ui.error(str(e))
+        return 1
+    print("request sent. once it's approved, run deneb auth --check (any deneb chat command also checks).")
+    return 0
+
+
+_AUTH_USAGE = ("usage: deneb auth --request [--name N --email E --box B --why W] [--replace]\n"
+               "       deneb auth --check\n"
+               "       deneb auth --token <your-token>  [--engine <url>]\n"
+               "       no token? deneb auth --request, then deneb auth --check")
+
+
 def cmd_auth(argv: list[str]) -> int:
+    if "--help" in argv or "-h" in argv:
+        print(_AUTH_USAGE)
+        return 0
+    if "--request" in argv:
+        return cmd_auth_request(argv)
+    if "--check" in argv:
+        req, want = config.load_request(), (_flag(argv, "--engine") or "").rstrip("/")
+        if req and want and req.get("engine") and want != req["engine"].rstrip("/"):
+            ui.error(f"that request was sent to {req['engine']}, not {want}. "
+                     "run deneb auth --check without --engine.")
+            return 1
+        state, msg = tokenreq.check_once()
+        (ui.info if state in ("approved", "pending") else ui.error)(msg)
+        return 0 if state in ("approved", "pending") else 1
     token = _flag(argv, "--token")
     if not token:
-        ui.error("usage: deneb auth --token <your-token>  [--engine <url>]")
+        ui.error(_AUTH_USAGE)
         return 2
     config.save(token=token.strip(), engine=_flag(argv, "--engine"))
     h = client.health()
@@ -52,9 +155,53 @@ def cmd_auth(argv: list[str]) -> int:
     return 0
 
 
+def cmd_brain(argv: list[str]) -> int:
+    """`deneb brain` shows the brain; `deneb brain local|altronis|<url> [--model N] [--key-env V]`
+    saves it. Only the NAME of the key's environment variable is stored, never the key."""
+    model, key_env = _flag(argv, "--model"), _flag(argv, "--key-env")
+    if key_env is not None and not brain.valid_key_env(key_env):
+        ui.error(brain.KEY_ENV_REFUSAL)
+        return 2
+    skip = {"--model", "--key-env"}
+    pos = [a for i, a in enumerate(argv) if not a.startswith("-") and (i == 0 or argv[i - 1] not in skip)]
+    if not pos:
+        try:
+            b = brain.resolve()
+        except client.DenebError as e:
+            ui.error(str(e))
+            return 1
+        if b is None:
+            saved = config.get_brain()
+            ui.info("no brain right now" + (f" (saved: {saved.get('mode')}, but nothing answers)" if saved else ""))
+            ui.info(brain.NO_BRAIN_MESSAGE)
+        else:
+            ui.info(f"brain: {b.describe()}")
+            ui.info(f"why: {b.reason}")
+        return 0
+    want = pos[0]
+    if want in ("local", "altronis"):
+        config.save_brain(mode=want, model=model, key_env=key_env)
+    elif re.match(r"^https?://[^/\s]+", want):
+        config.save_brain(mode="url", url=want.rstrip("/"), model=model, key_env=key_env)
+    else:
+        ui.error("usage: deneb brain local | altronis | <openai-compatible base URL>  "
+                 "[--model NAME] [--key-env VAR]")
+        return 2
+    ui.info(f"brain saved: {want}" + (f", model {model}" if model else ""))
+    if key_env:
+        ui.info(f"the key is read from ${key_env} when you run deneb. it is never written to disk.")
+    return 0
+
+
 def cmd_logout(_argv=None) -> int:
+    if not config.saved_token() and not config.load_request():
+        ui.info("no token saved, nothing to sign out of."
+                + (" (DENEB_TOKEN in the environment is not a saved token.)"
+                   if config.get_token() else ""))
+        return 0
     config.clear()
-    ui.info("signed out — token removed.")
+    config.clear_request()      # a request approved later must not sign this box back in
+    ui.info("signed out — token and any pending token request removed.")
     return 0
 
 
@@ -82,11 +229,9 @@ def cmd_profile(_argv=None) -> int:
     """`deneb profile` — read this box and print the structured HardwareProfile. Local,
     deterministic, KEYLESS, read-only: no auth, no engine/LLM round-trip (like `check`)."""
     from . import hardware  # deterministic, local — no engine round-trip needed
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
     p = hardware.profile_hardware()
     ui.banner()
-    print(f"{_C['d']}reading this box (read-only, no engine)…{_C['z']}\n")
+    print(f"{_C['d']}reading this box (read-only)…{_C['z']}\n")
     print(f"  {_C['b']}os{_C['z']}    {p.os or '?'} · {p.arch or '?'} · kernel {p.kernel or '?'}")
     print(f"  {_C['b']}cpu{_C['z']}   {p.cpu_model or 'unknown'}  ({p.cpu_cores or '?'} cores)")
     print(f"  {_C['b']}ram{_C['z']}   {str(p.ram_total_mb) + ' MB' if p.ram_total_mb else 'unknown'}")
@@ -118,7 +263,7 @@ def cmd_profile(_argv=None) -> int:
         print(line)
     if p.usable_mem_mb is not None:
         print(f"  {_C['b']}usable model budget:{_C['z']} ~{p.usable_mem_mb} MB "
-              f"{_C['d']}(coarse — Phase-2 fit math refines this){_C['z']}")
+              f"{_C['d']}(deneb recommend checks each model against it){_C['z']}")
     if p.notes:
         print(f"\n{_C['d']}notes:{_C['z']}")
         for n in p.notes:
@@ -138,9 +283,9 @@ def _fit_cell(fr) -> str:
         need = int(getattr(fr, "need_mb", 0) or 0)
         short = need - headroom if headroom else need  # headroom is 0 when budget unread
         return f"no (short ~{max(0, -headroom)} MB)" if headroom < 0 else "no"
-    if headroom < 2000:
-        return f"tight (~{headroom} MB)"
-    return f"✓ ~{int(round(headroom / 1024))} GB free"
+    if getattr(fr, "tight", False):
+        return f"⚠ tight (~{headroom / 1024:.1f} GB)"
+    return f"✓ ~{int(round(headroom / 1024))} GB spare"
 
 
 def _tokenmark_hw_hint(p):
@@ -167,7 +312,7 @@ def cmd_recommend(argv=None) -> int:
     catalog for the use-case, and print a table + a next-step pointer. Local, deterministic,
     KEYLESS, engine-free: no auth, no LLM, no engine round-trip. It EXECUTES NOTHING (the
     Deneb Rule) — the 'next: deneb setup <pick>' line is a printed pointer, not an invocation."""
-    from . import hardware, hf_catalog, speed, recommend as rec  # local, no engine round-trip
+    from . import check, hardware, hf_catalog, setup_advisor, speed, recommend as rec  # local, no engine round-trip
     argv = list(argv or [])
     use_case = (_flag(argv, "--use") or "general").strip().lower()
     if use_case not in _RECOMMEND_USE_CASES:
@@ -175,33 +320,53 @@ def cmd_recommend(argv=None) -> int:
                  f"{', '.join(_RECOMMEND_USE_CASES)}")
         return 2
 
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
     p = hardware.profile_hardware()
     models, source = hf_catalog.ranking_catalog()
     bw = speed.usable_bandwidth(p, speed.device_for_profile(p))
     recs = rec.recommend(p, use_case, catalog=models, bw_gbps=bw)
+    _family, free_gb = _setup_inputs()          # free disk where setup downloads to
 
     ui.banner()
-    budget = f"~{p.usable_mem_mb} MB" if p.usable_mem_mb is not None else "unknown"
+    budget = f"~{round(p.usable_mem_mb / 1024)} GB" if p.usable_mem_mb is not None else "unknown"
     print(f"{_C['d']}ranking local models for {_C['z']}{_C['b']}{use_case}{_C['z']} "
-          f"{_C['d']}on this box (budget {budget} · {p.primary_backend}, no engine; "
-          f"{source})…{_C['z']}")
+          f"{_C['d']}on this box (memory budget {budget} · {p.primary_backend} · "
+          f"{_serving_label(check.serving_now())}; {source})…{_C['z']}")
     for line in _device_lines(p, _C):
         print(line)
     print()
 
     print(f"  {_C['b']}{'#':<2} {'model':<30} {'quant':<11} "
-          f"{'fit':<18} {'speed':<9} {'est decode':<16}{_C['z']}")
+          f"{'memory':<18} {'speed':<9} {'est decode':<16}{_C['z']}")
     for i, r in enumerate(recs, 1):
         name = (getattr(r.model, 'name', '') or '?')[:30]
         qname = getattr(r.quant, 'name', '') or '?'
         tier = getattr(r.fit, 'expected_speed_tier', '') or '?'
-        col = _C['g'] if getattr(r.fit, 'fits', False) else _C['amber']
+        col = _C['g'] if getattr(r.fit, 'fits', False) and not getattr(r.fit, 'tight', False) else _C['amber']
         est = speed.fmt_tps(getattr(r.fit, "est_tps", None)) if bw else "-"
         print(f"  {_C['teal']}{i:<2}{_C['z']} {_C['b']}{name:<30}{_C['z']} "
               f"{qname:<11} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9} {est:<16}")
         print(f"     {_C['d']}why: {r.why}{_C['z']}")
+        need = setup_advisor.download_gib(r.quant)
+        if need and free_gb is not None and need > free_gb:
+            print(f"     {_C['amber']}download: ~{need} GiB, more than the {free_gb} GiB free "
+                  f"on ~/models{_C['z']}")
+        elif need and free_gb is not None:
+            print(f"     {_C['d']}download: ~{need} GiB, fits the {free_gb} GiB free on "
+                  f"~/models{_C['z']}")
+        elif need:
+            print(f"     {_C['d']}download: ~{need} GiB{_C['z']}")
+    if getattr(recs[0].fit, "fits", False):
+        pool = "all catalog models" if use_case == "general" else f"models tagged for {use_case}"
+        first = ("Models built for coding come first, then " if use_case == "coding"
+                 else "")
+        order = "the order" if first else "The order"
+        print(f"\n{_C['d']}" + ui.para(
+            f"{first}{order} is model size times quant quality, among {pool}. It is not a "
+            "skill score: a smaller model can beat a bigger one, so check a pick's published "
+            "benchmarks before a big download.", "  ") + _C['z'])
+    if free_gb is None:
+        print(f"\n  {_C['amber']}could not read the free disk on ~/models; check each download "
+              f"fits before you start.{_C['z']}")
 
     # Opt-in real numbers from TokenMark (community-measured tok/s). Default stays
     # KEYLESS/offline (the Deneb Rule); --measured adds one network call, fail-soft.
@@ -232,6 +397,17 @@ def cmd_recommend(argv=None) -> int:
               f"speculative decoding (MTP / draft models add 1.5-2.5x). Real numbers: "
               f"--measured{_C['z']}")
     top = recs[0]
+    top_need = setup_advisor.download_gib(top.quant)
+    if free_gb is not None and top_need > free_gb:
+        room = next(((i, r) for i, r in enumerate(recs, 1)
+                     if 0 < setup_advisor.download_gib(r.quant) <= free_gb), None)
+        tail = (f"The first pick that fits on disk now is #{room[0]} "
+                f"{getattr(room[1].model, 'name', '?')}." if room
+                else "None of these picks fits on disk now.")
+        print(f"\n{_C['amber']}" + ui.para(
+            f"#1 does not fit on disk: it downloads ~{top_need} GiB and ~/models has "
+            f"{free_gb} GiB free. Free about {top_need - free_gb} GiB or point the download "
+            f"at another drive. {tail}", "  ") + f"{_C['z']}")
     if not getattr(top.fit, "fits", False):
         print(f"\n  {_C['amber']}nothing in the catalog fits this box for "
               f"{use_case} — the row above is the closest (under-spec) option.{_C['z']}")
@@ -239,6 +415,60 @@ def cmd_recommend(argv=None) -> int:
           f"   {_C['d']}(prints the platform-correct setup steps for this pick; deneb runs "
           f"nothing here){_C['z']}")
     return 0
+
+
+def _serving_label(serving) -> str:
+    """What the recommend and setup headers say serves on this box (check.serving_now's
+    answer). They used to say "no engine", meaning no call to the hosted Deneb engine, which
+    read as "no inference engine" next to an Ollama that was serving."""
+    from . import check
+    if not serving:
+        return "no model server running"
+    port, kind, model = serving
+    name = check.SERVER_NAMES.get(kind, "a model server")
+    return f"{name} serving {model} on :{port}" if model else f"{name} serving on :{port}"
+
+
+def _setup_inputs():
+    """(distro family, free GB on the models directory), both read-only; None/'unknown' when
+    unreadable. The download goes to ~/models, so free space is read on its nearest existing
+    parent."""
+    import os
+    import shutil
+    from . import setup_advisor
+    try:
+        with open("/etc/os-release", encoding="utf-8") as f:
+            family = setup_advisor.distro_family(f.read())
+    except OSError:
+        family = "unknown"
+    path = os.path.expanduser("~/models")
+    while path and not os.path.exists(path) and os.path.dirname(path) != path:
+        path = os.path.dirname(path)
+    try:
+        free_gb = int(shutil.disk_usage(path).free // (1024 ** 3))
+    except OSError:
+        free_gb = None
+    return family, free_gb
+
+
+def _ollama_store_free():
+    """(free GiB or None, path) where an Ollama on this box keeps models: OLLAMA_MODELS when
+    set here, else the Linux service's /usr/share/ollama/.ollama/models when that install
+    exists, else ~/.ollama/models. Free space is read on the nearest existing parent, since a
+    store Ollama has not written yet need not exist. Read-only."""
+    import os
+    import shutil
+    where = os.environ.get("OLLAMA_MODELS", "").strip()
+    if not where:
+        where = ("/usr/share/ollama/.ollama/models" if os.path.isdir("/usr/share/ollama")
+                 else os.path.expanduser("~/.ollama/models"))
+    path = os.path.expanduser(where)
+    while path and not os.path.exists(path) and os.path.dirname(path) != path:
+        path = os.path.dirname(path)
+    try:
+        return int(shutil.disk_usage(path).free // (1024 ** 3)), where
+    except OSError:
+        return None, where
 
 
 def cmd_setup(argv=None) -> int:
@@ -249,7 +479,7 @@ def cmd_setup(argv=None) -> int:
     NOTHING — the Deneb Rule: Deneb shows every command and the user runs them. An unknown
     model name yields a helpful `deneb recommend` pointer + exit 2 (never a crash); a degraded
     platform still prints best-effort generic steps with a caveat (from setup_advisor)."""
-    from . import hardware, setup_advisor  # deterministic, local — no engine round-trip
+    from . import check, hardware, setup_advisor  # deterministic, local — no engine round-trip
     argv = list(argv or [])
     # the model name is the non-flag positional args after "setup", joined verbatim.
     name = " ".join(a for a in argv if not a.startswith("-")).strip()
@@ -271,15 +501,18 @@ def cmd_setup(argv=None) -> int:
                  f"+ the exact names:  deneb recommend --use coding")
         return 2
 
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
     p = hardware.profile_hardware()                 # read-only probe (diagnosis, allowed)
-    steps = setup_advisor.setup_steps(model, p)     # PURE — builds Step structs, runs nothing
+    family, free_gb = _setup_inputs()
+    serving = check.serving_now()                   # read-only GETs: an Ollama here gets its own route
+    store = _ollama_store_free() if serving and serving[1] == "ollama" else None
+    steps = setup_advisor.one_way_to_start(      # PURE: runs nothing; ONE way to start the server
+        setup_advisor.setup_steps(model, p, family=family, free_gb=free_gb, serving=serving,
+                                  ollama_free=store))
 
     mname = getattr(model, "name", name)
     ui.banner()
     print(f"{_C['d']}setup steps for {_C['z']}{_C['b']}{mname}{_C['z']} "
-          f"{_C['d']}on this box (backend {p.primary_backend}, no engine)…{_C['z']}\n")
+          f"{_C['d']}on this box (backend {p.primary_backend} · {_serving_label(serving)})…{_C['z']}\n")
     print(f"  {_C['amber']}Deneb shows every command and runs NOTHING (the Deneb Rule). "
           f"You run each yourself.{_C['z']}\n")
 
@@ -293,21 +526,31 @@ def cmd_setup(argv=None) -> int:
             print(f"     {_C['amber']}⚠ {w}{_C['z']}")
         print()
 
-    print(f"  {_C['b']}next:{_C['z']} run these yourself, top to bottom. "
+    route = next((i for i, s in enumerate(steps, 1) if s.kind == "ollama"), None)
+    how = (f"either run step {route} (the Ollama route), or run the other steps yourself, top "
+           "to bottom (the llama.cpp route)." if route else "run these yourself, top to bottom.")
+    print(f"  {_C['b']}next:{_C['z']} {how} "
           f"{_C['d']}Deneb ran none of them (v1 is tell-only); verify each before you run "
           f"it.{_C['z']}")
     return 0
 
 
+AUTO_WRITES_ASK = "--auto applies fix commands only; file writes always ask"
+
+
 def _make_confirm(auto: bool):
-    """Gate for APPLY actions (fix/write_file). --auto approves automatically; otherwise ask
-    the user y/N. A non-interactive stdin (piped) declines — deneb never mutates unprompted."""
-    def confirm(_res) -> bool:
-        if auto:
+    """Gate for APPLY actions (fix/write_file). --auto approves fix commands automatically; a
+    file write always asks, --auto or not. A non-interactive stdin (piped) declines — deneb never
+    mutates unprompted."""
+    def confirm(res) -> bool:
+        is_write = isinstance(res, dict) and res.get("action") == "write_file"
+        if auto and not is_write:
             ui.info("--auto: applying")
             return True
+        if auto:
+            ui.info(AUTO_WRITES_ASK)
         try:
-            ans = input("\033[38;5;178m  apply this? [y/N] \033[0m").strip().lower()
+            ans = input(f"{_C['gold']}  apply this? [y/N] {_C['z']}").strip().lower()
         except (EOFError, KeyboardInterrupt):
             print()
             return False
@@ -315,10 +558,10 @@ def _make_confirm(auto: bool):
     return confirm
 
 
-def _one_shot(question: str, image: str | None = None, auto: bool = False) -> int:
-    if not _require_auth():
-        return 2
+def _one_shot(question: str, image: str | None = None, auto: bool = False, flags=None) -> int:
     ui.banner()
+    if not _prepare(*(flags or (None, None, None)), image=image):
+        return 2
     try:
         if image:
             res = client.ask(question or "Diagnose the error in this screenshot.", image=image)
@@ -360,19 +603,19 @@ def _maybe_compact(session: list[dict]) -> list[dict]:
     return [{"role": "user", "content": "[Earlier session — compacted summary]\n" + summary}] + keep
 
 
-def _interactive(auto: bool = False) -> int:
+def _interactive(auto: bool = False, flags=None) -> int:
     ui.banner()
-    if not _require_auth():
+    if not _prepare(*(flags or (None, None, None))):
         return 2
     ui.info('describe what\'s wrong — or type "exit" to quit (Ctrl-C also works). '
             'e.g.  llama-server won\'t start')
     if auto:
-        ui.info("--auto is ON: fixes apply without asking (still never destructive/elevated).")
+        ui.info("--auto is ON: fix commands apply without asking (never destructive or elevated); file writes still ask.")
     confirm = _make_confirm(auto)
     session: list[dict] = []  # accumulating Q&A memory (the loop's tool turns are internal)
     while True:
         try:
-            q = input("\033[38;5;44mdeneb›\033[0m ").strip()
+            q = input(f"{_C['teal']}deneb›{_C['z']} ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -406,19 +649,16 @@ def cmd_guide(argv=None) -> int:
     Local, deterministic, KEYLESS, engine-free. Runs NOTHING - the Deneb Rule, which matters
     more here than anywhere else in the CLI because these steps edit BIOS and the bootloader.
     """
-    from . import hardware, platform_guide
+    from . import platform_guide
     argv = list(argv or [])
     key = " ".join(a for a in argv if not a.startswith("-")).strip()
 
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
 
     detected = ""
     if not key:
         # No platform named: read the box and pick. Detection is advisory, and is stated as
         # such, so a wrong guess is visible rather than silently followed.
-        p = hardware.profile_hardware()          # read-only probe (diagnosis, allowed)
-        detected = platform_guide.detect_platform(p)
+        detected = _detect_platform()            # read-only probe (diagnosis, allowed)
         key = detected
 
     guide = platform_guide.guide_for(key)
@@ -439,6 +679,7 @@ def cmd_guide(argv=None) -> int:
     print(f"{_C['teal']}recommended OS: {guide.recommended_os}{_C['z']}")
 
     # Distro family, so the package advice matches the box rather than assuming Debian.
+    fam = ""
     try:
         with open("/etc/os-release", encoding="utf-8") as fh:
             fam = platform_guide.distro_family(fh.read())
@@ -449,20 +690,29 @@ def cmd_guide(argv=None) -> int:
 
     for n, step in enumerate(guide.steps, 1):
         print(f"\n{_C['b']}{n}. {step.title}{_C['z']}")
-        print(f"   {step.what}")
+        print(ui.para(step.what))
         if step.command:
-            print(f"   {_C['g']}{step.command}{_C['z']}")
+            print(f"   {_C['g']}{platform_guide.step_command(step, fam)}{_C['z']}")
         for w in step.warnings:
-            print(f"   {_C['amber']}! {w}{_C['z']}")
+            print(f"{_C['amber']}{ui.para(w, '   ! ')}{_C['z']}")
         if step.verify:
             print(f"   {_C['d']}verify: {step.verify}{_C['z']}")
             if step.expect:
-                print(f"   {_C['d']}expect: {step.expect}{_C['z']}")
+                print(f"{_C['d']}{ui.para(step.expect, '   expect: ', '           ')}{_C['z']}")
 
     print(f"\n{_C['d']}source: {guide.source}{_C['z']}")
-    print(f"{_C['amber']}Deneb printed these and ran none of them. Read every command before "
-          f"you run it - these edit firmware and the bootloader.{_C['z']}\n")
+    print(f"{_C['amber']}" + ui.para("Deneb printed these and ran none of them. Read every "
+                                     "command before you run it - these edit firmware and the "
+                                     "bootloader.", "") + f"{_C['z']}\n")
     return 0
+
+
+def _detect_platform() -> str:
+    """The platform guide that fits this box, from a read-only hardware probe ("" if none).
+    One function for guide and stack, so the two never name the same box differently."""
+    from . import hardware, platform_guide, speed
+    p = hardware.profile_hardware()
+    return platform_guide.detect_platform(p, speed.device_for_profile(p))
 
 
 def cmd_stack(argv=None) -> int:
@@ -470,9 +720,8 @@ def cmd_stack(argv=None) -> int:
 
     The question these boxes actually pose is not "how do I run a model" but "how do I run
     an LLM, a vision model and OCR at once, and let a cloud app reach them through a single
-    endpoint without exposing any of them". `deneb setup` cannot express that: Surya is not
-    a chat model, one generation of it is not even a GGUF, and the gateway and tunnel are
-    not models at all.
+    endpoint without exposing any of them". `deneb setup` cannot express that: OCR is not
+    a chat model, and the gateway and tunnel are not models at all.
 
     Local, deterministic, KEYLESS, engine-free. Prints and runs nothing (the Deneb Rule).
     """
@@ -480,8 +729,6 @@ def cmd_stack(argv=None) -> int:
     argv = list(argv or [])
     want = " ".join(a for a in argv if not a.startswith("-")).strip()
 
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
 
     if want:
         svc = services.resolve_service(want)
@@ -496,50 +743,64 @@ def cmd_stack(argv=None) -> int:
         chosen = services.stack_services()
         print(f"\n{_C['b']}Private LLM stack - three endpoints behind one authenticated "
               f"front door{_C['z']}")
-        print(f"{_C['d']}brought up in this order on purpose: backends, then the gateway "
-              f"that fronts them, then exposure. Standing the tunnel up first would publish "
-              f"an unauthenticated model.{_C['z']}")
-        print(f"\n{_C['teal']}  cloud app  ->  tunnel  ->  gateway :8002  ->  "
-              f"LLM :8001 / VLM :8080 / OCR :8093{_C['z']}")
+        print(f"{_C['d']}" + ui.para("brought up in this order on purpose: backends, then the "
+                                     "gateway that fronts them, then exposure. Standing the "
+                                     "tunnel up first would publish an unauthenticated model.",
+                                     "") + f"{_C['z']}")
+        print(f"\n{_C['teal']}  cloud app -> tunnel -> gateway :8002 -> "
+              f"LLM :8001, VLM :8080, OCR :8082{_C['z']}")
+        print(f"{_C['d']}" + ui.para("(example ports, a recipe to adapt: use any free ports and "
+                                     "keep every model server on 127.0.0.1)", "  ") + f"{_C['z']}")
 
         # Platform caveats. The llama-server commands are portable; what surrounds them is
         # not, and those differences only surface when someone is already at the machine.
-        from . import hardware, platform_guide
-        detected = platform_guide.detect_platform(hardware.profile_hardware())
+        from . import platform_guide
+        detected = _detect_platform()
         notes = services.platform_notes(detected)
         if notes:
             label = platform_guide.guide_for(detected)
-            print(f"\n{_C['b']}On this box ({label.label if label else detected}){_C['z']}")
+            print(f"\n{_C['b']}On this box: {label.label if label else detected}{_C['z']}")
             for note in notes:
-                print(f"  {_C['amber']}- {note}{_C['z']}")
+                print(f"{_C['amber']}{ui.para(note, '  - ', '    ')}{_C['z']}")
         elif detected == "":
-            print(f"\n{_C['d']}could not identify this box; the commands below are the "
-                  f"portable part. Run `deneb guide <platform>` for the machine-specific "
-                  f"prerequisites.{_C['z']}")
+            print(f"\n{_C['d']}" + ui.para("could not identify this box; the commands below are "
+                                           "the portable part. Run `deneb guide <platform>` for "
+                                           "the machine-specific prerequisites.", "")
+                  + f"{_C['z']}")
 
     for svc in chosen:
         where = f" :{svc.port}" if svc.port else ""
         print(f"\n{_C['teal']}{_C['b']}▸ {svc.label}{where}{_C['z']}")
-        print(f"  {_C['d']}{svc.role}{_C['z']}")
+        print(f"{_C['d']}{ui.para(svc.role, '  ')}{_C['z']}")
         if svc.notes:
-            print(f"  {_C['d']}{svc.notes}{_C['z']}")
+            print(f"{_C['d']}{ui.para(svc.notes, '  ')}{_C['z']}")
         for n, step in enumerate(svc.steps, 1):
             print(f"\n  {_C['b']}{n}. {step.title}{_C['z']}")
-            print(f"     {step.what}")
+            print(ui.para(step.what, "     "))
             if step.command:
                 for line in step.command.split("\n"):
                     print(f"     {_C['g']}{line}{_C['z']}")
             for w in step.warnings:
-                print(f"     {_C['amber']}! {w}{_C['z']}")
+                print(f"{_C['amber']}{ui.para(w, '     ! ', '       ')}{_C['z']}")
             if step.verify:
                 print(f"     {_C['d']}verify: {step.verify}{_C['z']}")
             if step.expect:
-                print(f"     {_C['d']}expect: {step.expect}{_C['z']}")
+                print(f"{_C['d']}{ui.para(step.expect, '     expect: ', '             ')}"
+                      f"{_C['z']}")
 
-    print(f"\n{_C['amber']}Deneb printed these and ran none of them. The gateway step is the "
-          f"security boundary - test that an unauthenticated call gets 401 before you expose "
-          f"anything.{_C['z']}\n")
+    print(f"\n{_C['amber']}" + ui.para("Deneb printed these and ran none of them. The gateway "
+                                       "step is the security boundary - test that an "
+                                       "unauthenticated call gets 401 before you expose "
+                                       "anything.", "") + f"{_C['z']}\n")
     return 0
+
+
+# The README's install line, word for word (tests hold the two together).
+INSTALL_LINE = ("curl -fsSL https://raw.githubusercontent.com/sypherin/deneb-cli/main/"
+                "install.sh | sh")
+# the same installer for a box without curl (a fresh Ubuntu desktop has wget, not curl)
+INSTALL_LINE_WGET = ("wget -qO- https://raw.githubusercontent.com/sypherin/deneb-cli/main/"
+                     "install.sh | sh")
 
 
 def cmd_selfupdate(argv=None) -> int:
@@ -555,20 +816,19 @@ def cmd_selfupdate(argv=None) -> int:
     """
     argv = list(argv or [])
     remote = _flag(argv, "--remote")
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "amber": "\033[33m", "teal": "\033[38;5;44m"}
 
-    installer = "curl -fsSL https://deneb-engine.altronis.sg/install | sh"
+    installer = INSTALL_LINE
     local_cmds = [
         ("update Deneb in place", installer,
          "re-runs the installer, which pipx-installs the current version over the old one. "
          "Safe to re-run; it never asks for sudo."),
-        ("confirm the version afterwards", "deneb --version",
-         "prints the installed version so you can see the update actually landed."),
+        ("confirm it landed", "deneb --version",
+         "prints the release and the commit it was installed from. The commit changes "
+         "with every update, even within one release."),
     ]
 
     print(f"\n{_C['b']}Update Deneb{_C['z']}")
-    print(f"{_C['d']}installed version here: {__version__}{_C['z']}")
+    print(f"{_C['d']}installed version here: {version.installed()}{_C['z']}")
 
     if remote:
         print(f"{_C['teal']}target: {remote}{_C['z']}")
@@ -588,6 +848,9 @@ def cmd_selfupdate(argv=None) -> int:
             print(f"\n{_C['b']}{n}. {title}{_C['z']}")
             print(f"   {what}")
             print(f"   {_C['g']}{cmd}{_C['z']}")
+            if cmd == installer:
+                print(f"   {_C['d']}no curl on this box? the same with wget:{_C['z']}")
+                print(f"   {_C['g']}{INSTALL_LINE_WGET}{_C['z']}")
         print(f"\n{_C['d']}updating a box you are not sitting at:  "
               f"deneb selfupdate --remote user@host{_C['z']}")
 
@@ -596,30 +859,76 @@ def cmd_selfupdate(argv=None) -> int:
     return 0
 
 
-_HELP = """Deneb (Altronis) — get your AI box to a working private-LLM (Neo) state.
+def cmd_watch(argv=None) -> int:
+    """`deneb watch` — keep it healthy: re-run the scan plus disk / memory / restart / catalog
+    probes, say what changed since last time, and (opt-in) send an alert. Read-only: it
+    prints the fix, never applies it (Deneb Rule). The work lives in deneb/watch.py."""
+    from . import watch
+    return watch.main(argv)
 
-usage:
-  deneb                         start interactive troubleshooting
-  deneb "<what's wrong>"        one-shot: e.g.  deneb "llama-server won't start"
-  deneb check                   scan the box — am I done?
-  deneb profile                 read this box — structured hardware profile (os/cpu/ram/gpu)
-  deneb recommend [--use ...]   rank local models for this box (--use coding|vision|chat|general)
-  deneb catalog [--refresh]     the models Deneb ranks, real per-quant sizes (--refresh pulls Hugging Face)
-  deneb setup <model>           print the tell-only, platform-branched setup steps (runs nothing)
-  deneb guide [platform]        pre-flight runbook for the BOX (strix-halo | dgx-spark)
-  deneb stack [service]         several models behind ONE authed endpoint
-                                (llm | vlm | surya | surya2 | gateway | tunnel)
-  deneb selfupdate [--remote u@h]  how to update Deneb, here or on another box
-  deneb --image <path> "<q>"    diagnose a screenshot
-  deneb --auto "<what's wrong>" fix without asking each time (still never destructive)
-  deneb auth --token <token>    sign in with your Altronis token
-  deneb logout                  remove your token
+
+_HELP = """Deneb: check, set up and watch a local LLM server on your own AI box.
+
+free, no token, nothing sent unless you ask (alerts, --refresh, --measured).
+They read the box and print the fix, and run none of it:
+@FREE@
   deneb --version
 
-Deneb can APPLY fixes (edit a config, mkdir, systemctl --user restart) — it shows you each
-one and asks before running it (gate by default). It NEVER runs anything destructive,
-irreversible, or needing sudo — those it hands you to run yourself.
+conversational troubleshooting: free with your own model, or a token from Altronis on request:
+  deneb                         start interactive troubleshooting
+  deneb "<what's wrong>"        one-shot: e.g.  deneb "llama-server won't start"
+  deneb --image <path> "<q>"    diagnose a screenshot (needs a vision model)
+  deneb --auto "<what's wrong>" apply fix commands without asking (file writes always ask)
+  deneb brain                   which model it thinks with, and why
+  deneb brain local|altronis|<url> [--model NAME] [--key-env VAR]
+                                choose it (--key-env names the variable holding an API key)
+  deneb --brain <...> "<q>"     use one brain for this run only
+  deneb auth --request          ask Altronis for a token (name, email, box, why)
+  deneb auth --check            has my request been approved? (saves the token if so)
+  deneb auth --token <token>    save a token you were given
+  deneb logout                  remove your saved settings and token
+
+Which model it uses, first match wins: --brain, then deneb brain, then a saved token (the
+Altronis engine), then a model server already running on this box (the one deneb check finds).
+With your own model (a local server, or any OpenAI-compatible URL) nothing is sent to Altronis;
+if that URL is not this machine, Deneb says where your question goes before it sends it.
+With the Altronis engine, your question and the log lines Deneb reads are sent to the Altronis engine.
+Either way it can apply a fix (edit a config, mkdir, systemctl --user restart), asking before
+each one. --auto applies fix commands only; file writes always ask. It never runs anything destructive, irreversible or
+needing sudo: those it hands you to run yourself.
 """
+
+
+_HELP = _HELP.replace("@FREE@", freecmds.help_lines())   # the free block comes from one list
+
+# `deneb <command> --help` prints that command's lines instead of running the command
+_SUB_HELP = ("check", "profile", "recommend", "setup", "catalog", "guide", "stack",
+             "selfupdate", "self-update", "watch", "brain", "logout")
+_SUB_HELP_EXTRA = {
+    "recommend": "  deneb recommend --measured    add measured community speeds (reads TokenMark "
+                 "over the network)",
+}
+
+
+def _sub_help(sub: str) -> str:
+    """That command's lines from `deneb --help` (with their continuation lines), watch's full
+    usage, and where the rest is."""
+    sub = "selfupdate" if sub == "self-update" else sub
+    lines, keep = [], False
+    for ln in _HELP.splitlines():
+        if re.match(rf"  deneb {sub}(\s|$)", ln):
+            keep = True
+            lines.append(ln)
+        elif keep and ln.startswith(" " * 20) and ln.strip():
+            lines.append(ln)
+        else:
+            keep = False
+    if sub in _SUB_HELP_EXTRA:
+        lines.append(_SUB_HELP_EXTRA[sub])
+    if sub == "watch":
+        from . import watch
+        lines += ["", watch._USAGE]
+    return "\n".join(lines + ["", "all commands: deneb --help"])
 
 
 def cmd_catalog(argv=None) -> int:
@@ -628,8 +937,6 @@ def cmd_catalog(argv=None) -> int:
     per model) into ~/.cache/deneb/models.json. Writes only Deneb's own cache."""
     from . import hf_catalog
     argv = list(argv or [])
-    _C = {"g": "\033[32m", "d": "\033[2m", "b": "\033[1m", "z": "\033[0m",
-          "teal": "\033[38;5;44m", "amber": "\033[33m"}
     ui.banner()
     if "--refresh" in argv:
         print(f"{_C['d']}refreshing from Hugging Face…{_C['z']}")
@@ -660,16 +967,21 @@ def main(argv=None) -> int:
     import sys
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ("--version", "-V"):
-        print(f"deneb {__version__}")
+        print(f"deneb {version.installed()}")
         return 0
     if argv and argv[0] in ("-h", "--help", "help"):
         print(_HELP)
+        return 0
+    if argv and argv[0] in _SUB_HELP and ("--help" in argv[1:] or "-h" in argv[1:]):
+        print(_sub_help(argv[0]))
         return 0
     # Free-form-first: dispatch a leading subcommand, else treat argv as a question.
     if argv and argv[0] == "auth":
         return cmd_auth(argv[1:])
     if argv and argv[0] == "logout":
         return cmd_logout()
+    if argv and argv[0] == "brain":
+        return cmd_brain(argv[1:])
     if argv and argv[0] == "check":
         from . import check  # deterministic, local, no engine round-trip needed
         return check.run()
@@ -687,20 +999,24 @@ def main(argv=None) -> int:
         return cmd_stack(argv[1:])  # deterministic, local, keyless, engine-free (Deneb Rule)
     if argv and argv[0] in ("selfupdate", "self-update"):
         return cmd_selfupdate(argv[1:])  # tell-only (Deneb Rule)
+    if argv and argv[0] == "watch":
+        return cmd_watch(argv[1:])  # read-only maintain mode, tells the fix (Deneb Rule)
     image = _flag(argv, "--image")
+    flags = (_flag(argv, "--brain"), _flag(argv, "--model"), _flag(argv, "--key-env"))
     auto = "--auto" in argv
+    valued = ("--image", "--brain", "--model", "--key-env")
     question_words = []
     i = 0
     while i < len(argv):
-        if argv[i] == "--image":
+        if argv[i] in valued:
             i += 2
             continue
-        if argv[i].startswith("--image=") or argv[i] == "--auto":
+        if argv[i].startswith(tuple(v + "=" for v in valued)) or argv[i] == "--auto":
             i += 1
             continue
         question_words.append(argv[i])
         i += 1
     q = " ".join(question_words).strip()
     if not q and not image:
-        return _interactive(auto=auto)
-    return _one_shot(q, image=image, auto=auto)
+        return _interactive(auto=auto, flags=flags)
+    return _one_shot(q, image=image, auto=auto, flags=flags)

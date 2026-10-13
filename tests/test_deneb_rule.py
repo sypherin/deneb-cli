@@ -28,7 +28,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from deneb import cli, setup_advisor, tools  # noqa: E402
+from deneb import cli, setup_advisor, tools, watch  # noqa: E402
 from deneb.hardware import GPUInfo, HardwareProfile  # noqa: E402
 from deneb.setup_advisor import Step  # noqa: E402
 
@@ -94,7 +94,7 @@ def test_cli_tellonly_fns_reference_no_executor():
     # in the CLI: their printed commands edit BIOS, the bootloader, and Deneb's own
     # installed code. If any of them ever gains an executor, this is what catches it.
     for fn in (cli.cmd_setup, cli.cmd_recommend, cli.cmd_profile,
-               cli.cmd_guide, cli.cmd_selfupdate, cli.cmd_stack):
+               cli.cmd_guide, cli.cmd_selfupdate, cli.cmd_stack, cli.cmd_watch):
         src = inspect.getsource(fn)
         hits = [t for t in _CLI_FORBIDDEN if t in src]
         assert not hits, f"{fn.__name__} references an executor token: {hits}"
@@ -150,6 +150,51 @@ def test_cmd_profile_fires_no_executor():
     assert rc == 0 and buf.getvalue().strip()
 
 
+def _canned_probes():
+    """Replace every watch probe with a canned finding so the run needs no real box."""
+    ok = lambda i: {"id": i, "label": i, "status": "fail", "evidence": "down", "fix": "start it"}  # noqa: E731
+    saved = [(watch, "gather", watch.gather)]
+    watch.gather = lambda *a: ([ok("endpoint"), ok("disk")], 1, None)
+
+    def restore():
+        for obj, attr, val in saved:
+            setattr(obj, attr, val)
+    return restore
+
+
+def test_cmd_watch_run_fires_no_executor():
+    import tempfile
+    restore, restore_probes = _install_tripwires(), _canned_probes()
+    old = os.environ.get("DENEB_STATE_DIR")
+    buf = io.StringIO()
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["DENEB_STATE_DIR"] = d                   # watch writes only its own state
+            with redirect_stdout(buf):
+                rc = cli.cmd_watch([])                          # must fire no tripwire
+    finally:
+        restore_probes()
+        restore()
+        if old is None:
+            os.environ.pop("DENEB_STATE_DIR", None)
+        else:
+            os.environ["DENEB_STATE_DIR"] = old
+    assert rc == 2
+    assert "fix:" in buf.getvalue() and "start it" in buf.getvalue(), "the fix must be PRINTED"
+
+
+def test_cmd_watch_schedule_prints_only_and_fires_no_executor():
+    restore = _install_tripwires()
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            rc = cli.cmd_watch(["--schedule"])                  # must fire no tripwire
+    finally:
+        restore()
+    assert rc == 0
+    assert "systemctl --user enable --now deneb-watch.timer" in buf.getvalue()
+
+
 # ── 4. positive control - the tripwire is real (not a silent no-op) ────────────
 def test_tripwire_actually_fires_when_executor_called():
     restore = _install_tripwires()
@@ -165,6 +210,100 @@ def test_tripwire_actually_fires_when_executor_called():
         restore()
     # and the real surface is fully restored afterwards
     assert tools.run_write is not _boom, "tripwire must be restored after the test"
+
+
+# ── 5. the probes added for non-llama.cpp servers and system units stay read-only ──
+# One case per new probe command, run through the REAL allowlist with subprocess stubbed:
+# the read form must be accepted, and every mutating sibling must be refused before it can run.
+def _through_allowlist(cmd):
+    import subprocess
+    ran = []
+
+    class _P:
+        stdout, stderr, returncode = "x", "", 0
+
+    real = subprocess.run
+    subprocess.run = lambda argv, **k: ran.append(argv) or _P()
+    try:
+        res = tools.run(cmd)
+    finally:
+        subprocess.run = real
+    return res, ran
+
+
+def test_new_probe_ollama_ps_is_allowed_read_only():
+    res, ran = _through_allowlist("ollama ps")
+    assert not res.get("refused") and ran == [["ollama", "ps"]]
+
+
+def test_ollama_mutating_verbs_are_refused():
+    for cmd in ("ollama run llama3", "ollama pull llama3", "ollama rm llama3", "ollama stop llama3",
+                "ollama serve", "ollama create x -f y", "ollama cp a b", "ollama push a",
+                "ollama ps --all extra", "ollama", "ollama signin"):
+        res, ran = _through_allowlist(cmd)
+        assert res.get("refused") and not ran, cmd
+
+
+def test_new_probe_system_scope_status_and_show_are_allowed():
+    for cmd in ("systemctl status 4242 --no-pager", "systemctl show ollama.service -p NRestarts --value",
+                "systemctl is-enabled ollama.service", "ps -p 31 -o args="):
+        res, ran = _through_allowlist(cmd)
+        assert not res.get("refused") and len(ran) == 1, cmd
+
+
+def test_system_scope_mutating_systemctl_stays_refused():
+    for cmd in ("systemctl start ollama.service", "systemctl stop ollama.service",
+                "systemctl restart ollama.service", "systemctl enable ollama.service",
+                "systemctl disable ollama.service", "systemctl --user restart x.service",
+                "systemctl daemon-reload", "systemctl kill ollama.service", "systemctl mask x.service"):
+        res, ran = _through_allowlist(cmd)
+        assert res.get("refused") and not ran, cmd
+
+# ── 6. an absolute argv[0] only from a system bin directory (review item 11) ──
+def test_binary_by_path_is_refused_outside_the_system_bin_dirs():
+    for cmd in ("/tmp/x/ollama ps", "./ollama ps", "/home/u/bin/systemctl status x", "/tmp/cat /etc/hostname",
+                "/usr/bin/../../tmp/x/ollama ps", "/opt/rocm/bin/../../../tmp/ollama ps",
+                "/usr/binx/ollama ps", "/opt/rocmx/ollama ps", "/opt/rocm-6.2/lib/rocm-smi",
+                "/usr/bin/sub/ollama ps"):
+        res, ran = _through_allowlist(cmd)
+        assert res.get("refused") and not ran, cmd
+
+
+def test_binary_by_path_is_accepted_from_the_system_bin_dirs():
+    for cmd in ("/usr/bin/ollama ps", "/usr/local/bin/ollama ps", "/bin/ls /tmp", "/usr/sbin/ss -ltnp",
+                "/sbin/ip addr", "/opt/rocm/bin/rocm-smi", "/opt/rocm-6.2.0/bin/rocminfo",
+                "/usr//bin/ollama ps"):
+        res, ran = _through_allowlist(cmd)
+        assert not res.get("refused") and len(ran) == 1, cmd
+
+
+def test_path_to_a_binary_not_on_the_allowlist_is_still_refused():
+    res, ran = _through_allowlist("/usr/bin/rm -rf /tmp/x")
+    assert res.get("refused") and not ran
+
+
+def test_apply_tier_refuses_a_binary_by_path_outside_the_system_bin_dirs():
+    import subprocess
+    for cmd in ("/tmp/x/systemctl --user restart a.service", "/tmp/mkdir -p /tmp/deneb-x",
+                "/home/u/ln -s a b", "./systemctl --user restart a.service"):
+        real = subprocess.run
+        subprocess.run = lambda *a, **k: (_ for _ in ()).throw(AssertionError("executed: " + cmd))
+        try:
+            res = tools.run_write(cmd)
+        finally:
+            subprocess.run = real
+        assert res.get("refused"), cmd
+    ran = []
+
+    class _P:
+        stdout, stderr, returncode = "", "", 0
+    real = subprocess.run
+    subprocess.run = lambda argv, **k: ran.append(argv) or _P()
+    try:
+        res = tools.run_write("/usr/bin/systemctl --user restart a.service")
+    finally:
+        subprocess.run = real
+    assert not res.get("refused") and len(ran) == 1
 
 
 if __name__ == "__main__":

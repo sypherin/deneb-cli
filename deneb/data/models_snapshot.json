@@ -19,42 +19,58 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 9829,
-     "bpw": 2.88
+     "bpw": 2.88,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 13146,
-     "bpw": 3.85
+     "bpw": 3.85,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 14253,
-     "bpw": 4.17
+     "bpw": 4.17,
+     "parts": 1,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 17559,
-     "bpw": 5.14
+     "bpw": 5.14,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 20877,
-     "bpw": 6.11
+     "bpw": 6.11,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 25299,
-     "bpw": 7.41
+     "bpw": 7.41,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 29047,
-     "bpw": 8.51
+     "bpw": 8.51,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 31458,
-     "bpw": 9.21
+     "bpw": 9.21,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "Dense 27B with native vision (needs the mmproj file). Strong all-rounder that fits one 24-32 GB GPU at 4-bit.",
@@ -78,37 +94,51 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 78869,
-     "bpw": 3.57
+     "bpw": 3.57,
+     "parts": 3,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 89986,
-     "bpw": 4.07
+     "bpw": 4.07,
+     "parts": 3,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 93683,
-     "bpw": 4.24
+     "bpw": 4.24,
+     "parts": 3,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 111335,
-     "bpw": 5.03
+     "bpw": 5.03,
+     "parts": 4,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 158286,
-     "bpw": 7.16
+     "bpw": 7.16,
+     "parts": 6,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 169165,
-     "bpw": 7.65
+     "bpw": 7.65,
+     "parts": 6,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 188225,
-     "bpw": 8.51
+     "bpw": 8.51,
+     "parts": 6,
+     "tag": "Q8_0"
     }
    ],
    "notes": "MoE, ~6B active of 125B plus 51B n-gram embedding. Native vision (mmproj). MTP draft files in the repo's MTP/ folder speed up decode.",
@@ -132,37 +162,51 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 108720,
-     "bpw": 2.71
+     "bpw": 2.71,
+     "parts": 4,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 147536,
-     "bpw": 3.68
+     "bpw": 3.68,
+     "parts": 4,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 156822,
-     "bpw": 3.91
+     "bpw": 3.91,
+     "parts": 5,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 199707,
-     "bpw": 4.98
+     "bpw": 4.98,
+     "parts": 6,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 240306,
-     "bpw": 5.99
+     "bpw": 5.99,
+     "parts": 6,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 291833,
-     "bpw": 7.28
+     "bpw": 7.28,
+     "parts": 7,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 340982,
-     "bpw": 8.5
+     "bpw": 8.5,
+     "parts": 8,
+     "tag": "Q8_0"
     }
    ],
    "notes": "MoE, 320B total, 18B active. Needs 128 GB+ even at 2-bit.",
@@ -185,37 +229,51 @@
     {
      "name": "Q4_K_M",
      "size_mb": 62769,
-     "bpw": 4.3
+     "bpw": 4.3,
+     "parts": 2,
+     "tag": "Q4_K_M"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 62890,
-     "bpw": 4.31
+     "bpw": 4.31,
+     "parts": 2,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 63016,
-     "bpw": 4.32
+     "bpw": 4.32,
+     "parts": 2,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 63284,
-     "bpw": 4.33
+     "bpw": 4.33,
+     "parts": 2,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 63284,
-     "bpw": 4.33
+     "bpw": 4.33,
+     "parts": 2,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 63387,
-     "bpw": 4.34
+     "bpw": 4.34,
+     "parts": 2,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 64473,
-     "bpw": 4.41
+     "bpw": 4.41,
+     "parts": 2,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 117B total, 5.1B active. Ships natively in MXFP4, so every GGUF quant is about the same size: take the native one.",
@@ -238,37 +296,51 @@
     {
      "name": "Q4_K_M",
      "size_mb": 11625,
-     "bpw": 4.45
+     "bpw": 4.45,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 11717,
-     "bpw": 4.48
+     "bpw": 4.48,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 11872,
-     "bpw": 4.54
+     "bpw": 4.54,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 12041,
-     "bpw": 4.61
+     "bpw": 4.61,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 12041,
-     "bpw": 4.61
+     "bpw": 4.61,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 12110,
-     "bpw": 4.63
+     "bpw": 4.63,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 13195,
-     "bpw": 5.05
+     "bpw": 5.05,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 21B total, 3.6B active. Native MXFP4, fits a 16 GB GPU.",
@@ -290,67 +362,93 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 26761,
-     "bpw": 2.69
+     "bpw": 2.69,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 36283,
-     "bpw": 3.64
+     "bpw": 3.64,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 38429,
-     "bpw": 3.86
+     "bpw": 3.86,
+     "parts": 1,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "IQ4_XS",
      "size_mb": 42676,
-     "bpw": 4.29
+     "bpw": 4.29,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "MXFP4",
      "size_mb": 48034,
-     "bpw": 4.82
+     "bpw": 4.82,
+     "parts": 1,
+     "tag": "MXFP4_MOE"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 48528,
-     "bpw": 4.87
+     "bpw": 4.87,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 49608,
-     "bpw": 4.98
+     "bpw": 4.98,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 56848,
-     "bpw": 5.71
+     "bpw": 5.71,
+     "parts": 3,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 59541,
-     "bpw": 5.98
+     "bpw": 5.98,
+     "parts": 3,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 65614,
-     "bpw": 6.59
+     "bpw": 6.59,
+     "parts": 3,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 73119,
-     "bpw": 7.34
+     "bpw": 7.34,
+     "parts": 3,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 84812,
-     "bpw": 8.52
+     "bpw": 8.52,
+     "parts": 3,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 86349,
-     "bpw": 8.67
+     "bpw": 8.67,
+     "parts": 3,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 80B total, 3B active. Coding agent model.",
@@ -372,57 +470,79 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 11789,
-     "bpw": 3.09
+     "bpw": 3.09,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 13806,
-     "bpw": 3.62
+     "bpw": 3.62,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "IQ4_XS",
      "size_mb": 16378,
-     "bpw": 4.29
+     "bpw": 4.29,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 17665,
-     "bpw": 4.63
+     "bpw": 4.63,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 18557,
-     "bpw": 4.86
+     "bpw": 4.86,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 21726,
-     "bpw": 5.69
+     "bpw": 5.69,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 21740,
-     "bpw": 5.7
+     "bpw": 5.7,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 25093,
-     "bpw": 6.57
+     "bpw": 6.57,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 26340,
-     "bpw": 6.9
+     "bpw": 6.9,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 32484,
-     "bpw": 8.51
+     "bpw": 8.51,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 35990,
-     "bpw": 9.43
+     "bpw": 9.43,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 30.5B total, 3.3B active. Very fast coder for 24 GB GPUs and unified-memory boxes.",
@@ -446,47 +566,65 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 12291,
-     "bpw": 2.84
+     "bpw": 2.84,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 16846,
-     "bpw": 3.89
+     "bpw": 3.89,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 17731,
-     "bpw": 4.09
+     "bpw": 4.09,
+     "parts": 1,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "MXFP4",
      "size_mb": 21706,
-     "bpw": 5.01
+     "bpw": 5.01,
+     "parts": 1,
+     "tag": "MXFP4_MOE"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 22360,
-     "bpw": 5.16
+     "bpw": 5.16,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 26593,
-     "bpw": 6.14
+     "bpw": 6.14,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 31844,
-     "bpw": 7.35
+     "bpw": 7.35,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 36903,
-     "bpw": 8.52
+     "bpw": 8.52,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 38451,
-     "bpw": 8.87
+     "bpw": 8.87,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 35B total, ~3B active. MTP variant unsloth/Qwen3.6-35B-A3B-MTP-GGUF decodes faster.",
@@ -509,47 +647,65 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 10547,
-     "bpw": 3.34
+     "bpw": 3.34,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 12907,
-     "bpw": 4.09
+     "bpw": 4.09,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-IQ4_XS",
      "size_mb": 13597,
-     "bpw": 4.31
+     "bpw": 4.31,
+     "parts": 1,
+     "tag": "UD-IQ4_XS"
     },
     {
      "name": "MXFP4",
      "size_mb": 16551,
-     "bpw": 5.25
+     "bpw": 5.25,
+     "parts": 1,
+     "tag": "MXFP4_MOE"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 17011,
-     "bpw": 5.39
+     "bpw": 5.39,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 21218,
-     "bpw": 6.73
+     "bpw": 6.73,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 23295,
-     "bpw": 7.39
+     "bpw": 7.39,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 26860,
-     "bpw": 8.52
+     "bpw": 8.52,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 27636,
-     "bpw": 8.76
+     "bpw": 8.76,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "MoE, 25.2B total, 3.8B active. Multimodal (mmproj). QAT build: unsloth/gemma-4-26B-A4B-it-qat-GGUF.",
@@ -571,57 +727,79 @@
     {
      "name": "IQ4_XS",
      "size_mb": 18169,
-     "bpw": 4.6
+     "bpw": 4.6,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 19920,
-     "bpw": 5.05
+     "bpw": 5.05,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 19939,
-     "bpw": 5.05
+     "bpw": 5.05,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 22834,
-     "bpw": 5.78
+     "bpw": 5.78,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 24574,
-     "bpw": 6.23
+     "bpw": 6.23,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 26149,
-     "bpw": 6.62
+     "bpw": 6.62,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 27506,
-     "bpw": 6.97
+     "bpw": 6.97,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 33508,
-     "bpw": 8.49
+     "bpw": 8.49,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 33508,
-     "bpw": 8.49
+     "bpw": 8.49,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 33585,
-     "bpw": 8.51
+     "bpw": 8.51,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 40448,
-     "bpw": 10.25
+     "bpw": 10.25,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "Hybrid Mamba MoE, 30B total, 3.5B active, 1M context.",
@@ -644,57 +822,79 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 3757,
-     "bpw": 4.0
+     "bpw": 4.0,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 4588,
-     "bpw": 4.88
+     "bpw": 4.88,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "IQ4_XS",
      "size_mb": 4715,
-     "bpw": 5.02
+     "bpw": 5.02,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 4977,
-     "bpw": 5.3
+     "bpw": 5.3,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 5126,
-     "bpw": 5.45
+     "bpw": 5.45,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 5482,
-     "bpw": 5.83
+     "bpw": 5.83,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 6656,
-     "bpw": 7.08
+     "bpw": 7.08,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 7075,
-     "bpw": 7.53
+     "bpw": 7.53,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 7458,
-     "bpw": 7.94
+     "bpw": 7.94,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 8193,
-     "bpw": 8.72
+     "bpw": 8.72,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 8712,
-     "bpw": 9.27
+     "bpw": 9.27,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "Small multimodal model for laptops and 8 GB GPUs (mmproj for vision).",
@@ -717,57 +917,79 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 4122,
-     "bpw": 3.68
+     "bpw": 3.68,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 5054,
-     "bpw": 4.52
+     "bpw": 4.52,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "IQ4_XS",
      "size_mb": 5169,
-     "bpw": 4.62
+     "bpw": 4.62,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 5681,
-     "bpw": 5.08
+     "bpw": 5.08,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 5966,
-     "bpw": 5.33
+     "bpw": 5.33,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 6578,
-     "bpw": 5.88
+     "bpw": 5.88,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 6744,
-     "bpw": 6.03
+     "bpw": 6.03,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 7458,
-     "bpw": 6.66
+     "bpw": 6.66,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 8757,
-     "bpw": 7.82
+     "bpw": 7.82,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 9528,
-     "bpw": 8.51
+     "bpw": 8.51,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 12974,
-     "bpw": 11.59
+     "bpw": 11.59,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "Small dense model for 8-12 GB GPUs.",
@@ -790,57 +1012,79 @@
     {
      "name": "UD-Q2_K_XL",
      "size_mb": 1941,
-     "bpw": 3.69
+     "bpw": 3.69,
+     "parts": 1,
+     "tag": "UD-Q2_K_XL"
     },
     {
      "name": "UD-Q3_K_XL",
      "size_mb": 2436,
-     "bpw": 4.63
+     "bpw": 4.63,
+     "parts": 1,
+     "tag": "UD-Q3_K_XL"
     },
     {
      "name": "IQ4_XS",
      "size_mb": 2477,
-     "bpw": 4.71
+     "bpw": 4.71,
+     "parts": 1,
+     "tag": "IQ4_XS"
     },
     {
      "name": "Q4_K_M",
      "size_mb": 2741,
-     "bpw": 5.21
+     "bpw": 5.21,
+     "parts": 1,
+     "tag": "Q4_K_M"
     },
     {
      "name": "UD-Q4_K_XL",
      "size_mb": 2912,
-     "bpw": 5.54
+     "bpw": 5.54,
+     "parts": 1,
+     "tag": "UD-Q4_K_XL"
     },
     {
      "name": "Q5_K_M",
      "size_mb": 3144,
-     "bpw": 5.98
+     "bpw": 5.98,
+     "parts": 1,
+     "tag": "Q5_K_M"
     },
     {
      "name": "UD-Q5_K_XL",
      "size_mb": 3251,
-     "bpw": 6.18
+     "bpw": 6.18,
+     "parts": 1,
+     "tag": "UD-Q5_K_XL"
     },
     {
      "name": "Q6_K",
      "size_mb": 3526,
-     "bpw": 6.71
+     "bpw": 6.71,
+     "parts": 1,
+     "tag": "Q6_K"
     },
     {
      "name": "UD-Q6_K_XL",
      "size_mb": 4146,
-     "bpw": 7.89
+     "bpw": 7.89,
+     "parts": 1,
+     "tag": "UD-Q6_K_XL"
     },
     {
      "name": "Q8_0",
      "size_mb": 4482,
-     "bpw": 8.53
+     "bpw": 8.53,
+     "parts": 1,
+     "tag": "Q8_0"
     },
     {
      "name": "UD-Q8_K_XL",
      "size_mb": 5952,
-     "bpw": 11.32
+     "bpw": 11.32,
+     "parts": 1,
+     "tag": "UD-Q8_K_XL"
     }
    ],
    "notes": "Tiny dense model for CPU-only boxes and 6 GB GPUs.",

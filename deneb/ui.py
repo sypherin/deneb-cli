@@ -3,12 +3,14 @@ logos, or telemetry. Plain ANSI (zero deps) so install stays trivial.
 """
 from __future__ import annotations
 
+import re
 import sys
+import unicodedata
 
-_C = {
-    "teal": "\033[38;5;44m", "dim": "\033[2m", "b": "\033[1m", "r": "\033[0m",
-    "red": "\033[31m", "grey": "\033[90m", "green": "\033[32m", "amber": "\033[33m",
-}
+from .colour import Palette
+
+_C = Palette(teal="teal", dim="dim", b="bold", r="reset", red="red", grey="grey",
+             green="green", amber="amber")
 
 
 def _p(s: str = "") -> None:
@@ -24,14 +26,89 @@ def info(s: str) -> None:
     _p(f"{_C['grey']}{s}{_C['r']}")
 
 
+def para(text: str, first: str = "   ", rest=None, width: int = 80) -> str:
+    """One paragraph of prose wrapped to `width` columns: `first` before line one, `rest`
+    (default: as wide as `first`, in spaces) before the others. Never use it on a command
+    line: a command must stay one line so it can be copied."""
+    import textwrap
+    return textwrap.fill(" ".join(str(text).split()), width=width, initial_indent=first,
+                         subsequent_indent=" " * len(first) if rest is None else rest,
+                         break_on_hyphens=False, break_long_words=False)
+
+
 def error(s: str) -> None:
     _p(f"{_C['red']}✗ {s}{_C['r']}")
+
+
+# C0/C1 controls, line/paragraph separators, and every Unicode format character (category Cf:
+# bidi overrides and isolates, zero-width characters, the BOM, U+061C, U+180E ...). Cf is decided
+# per character from this Python's Unicode data, so it never goes stale and costs nothing at
+# import (the old module-level table scanned all 1.1M code points on every start).
+_NOT_PLAIN = re.compile("[^\\x20-\\x7e]")      # anything outside printable ASCII is checked
+
+
+def _unsafe(ch: str) -> bool:
+    o = ord(ch)
+    return (o < 0x20 or 0x7f <= o <= 0x9f or o in (0x2028, 0x2029, 0x180E)
+            or unicodedata.category(ch) == "Cf")
+
+
+_NAMED = {"\r": "\\r", "\n": "\\n", "\t": "\\t"}
+
+
+def visible(s, keep: str = "") -> str:
+    """`s` with every control character shown as an escape (\\x1b, \\r, \\x07 ...) instead
+    of obeyed, so nothing the model wrote can rewrite what the user is looking at. Characters
+    in `keep` (newline, tab) are left alone."""
+    def one(m):
+        c = m.group(0)
+        if c in keep or not _unsafe(c):
+            return c
+        return _NAMED.get(c) or (f"\\x{ord(c):02x}" if ord(c) < 256 else f"\\u{ord(c):04x}" if ord(c) < 0x10000 else f"\\U{ord(c):08x}")
+    return _NOT_PLAIN.sub(one, str(s))
+
+
+PREVIEW_FULL, PREVIEW_HEAD = 60, 40
+
+
+def _in_exec(lines, i) -> bool:
+    """True when line i is an Exec line or a backslash-continuation of one."""
+    while i >= 0:
+        if lines[i].lstrip().startswith("Exec"):
+            return True
+        if i == 0 or not lines[i - 1].rstrip().endswith("\\"):
+            return False
+        i -= 1
+    return False
+
+
+def content_preview(content: str) -> list:
+    """Lines to show for a proposed file write. Up to 60 lines are shown whole. Longer content
+    shows the first 40, then every later line that starts with Exec, plus the \\ continuation lines of an Exec line (each with its line number) so a
+    payload cannot hide below the fold, then how many lines were not shown."""
+    lines = (content or "").replace("\r\n", "\n").split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    if len(lines) <= PREVIEW_FULL:
+        return [visible(x, "\t") for x in lines]
+    out = [visible(x, "\t") for x in lines[:PREVIEW_HEAD]]
+    shown = 0
+    cont = lines[PREVIEW_HEAD - 1].rstrip().endswith("\\") and _in_exec(lines, PREVIEW_HEAD - 1)
+    for n, x in enumerate(lines[PREVIEW_HEAD:], start=PREVIEW_HEAD + 1):
+        if x.lstrip().startswith("Exec") or cont:
+            out.append(f"{n}: {visible(x, chr(9))}")
+            shown += 1
+            cont = x.rstrip().endswith("\\")
+        else:
+            cont = False
+    out.append(f"{len(lines) - PREVIEW_HEAD - shown} more lines not shown")
+    return out
 
 
 def event(kind: str, d: dict) -> None:
     if kind == "action":
         a = d.get("action", "")
-        label = d.get("cmd") or d.get("path") or ""
+        label = visible(d.get("cmd") or d.get("path") or "")
         verb = {"run": "checking", "read_file": "reading", "list_dir": "listing"}.get(a, a)
         _p(f"{_C['dim']}  ▸ {verb}: {label}{_C['r']}")
     elif kind == "escalated":
@@ -42,21 +119,18 @@ def event(kind: str, d: dict) -> None:
         action = d.get("action")
         _p("")
         if action == "write_file":
-            _p(f"{_C['amber']}  ⚙ proposed edit:{_C['r']} write {d.get('path', '')}")
-            lines = (d.get("content", "") or "").splitlines()
-            for ln in lines[:12]:
+            _p(f"{_C['amber']}  ⚙ proposed edit:{_C['r']} write {visible(d.get('path', ''))}")
+            for ln in content_preview(d.get("content", "")):
                 _p(f"{_C['dim']}      {ln}{_C['r']}")
-            if len(lines) > 12:
-                _p(f"{_C['dim']}      …({len(lines) - 12} more lines){_C['r']}")
         else:
-            _p(f"{_C['amber']}  ⚙ proposed fix:{_C['r']} {d.get('cmd', '')}")
+            _p(f"{_C['amber']}  ⚙ proposed fix:{_C['r']} {visible(d.get('cmd', ''))}")
         if d.get("why"):
-            _p(f"{_C['dim']}    why: {d['why']}{_C['r']}")
+            _p(f"{_C['dim']}    why: {visible(d['why'])}{_C['r']}")
         _p(f"{_C['dim']}    (reversible — deneb backs up any file it changes){_C['r']}")
     elif kind == "applied":
         ok = d.get("ok")
         mark, col = ("✓", _C["green"]) if ok else ("✗", _C["red"])
-        _p(f"{col}  {mark} applied:{_C['r']} {d.get('output', '')}")
+        _p(f"{col}  {mark} applied:{_C['r']} {visible(d.get('output', ''), chr(10))}")
     elif kind == "skipped":
         _p(f"{_C['dim']}  ▸ skipped — not applied.{_C['r']}")
     # observations stay quiet by default (the model reasons on them server-side)
@@ -66,9 +140,11 @@ def final(res: dict) -> None:
     ans = (res.get("answer") or "").strip()
     _p("")
     _p(ans)
+    if res.get("hint"):
+        _p(f"\n{_C['grey']}{res['hint']}{_C['r']}")
     srcs = res.get("sources") or []
     if srcs:
-        _p(f"\n{_C['grey']}— grounded in your Neo runbook:{_C['r']}")
+        _p(f"\n{_C['grey']}— grounded in the Altronis runbook:{_C['r']}")
         for s in srcs[:2]:
             _p(f"{_C['grey']}  · {s.get('label', '')}{_C['r']}")
     # escalation is announced via the 'escalated' event (loop path). For the single-shot

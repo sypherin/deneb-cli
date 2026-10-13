@@ -38,7 +38,7 @@ def main() -> int:
             fails.append(("secrets file not guarded", kp, out))
 
         # 3. a normal file with a secret inside still gets redacted on read.
-        cfg = os.path.join(d, "neo.conf")
+        cfg = os.path.join(d, "myapp.conf")
         with open(cfg, "w") as f:
             f.write("upstream=8001\nauth_token: ABCDEFGHIJKLMNOPQRSTUV123456\n")
         out2 = tools.read_file(cfg)["output"]

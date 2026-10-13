@@ -401,6 +401,57 @@ def test_live_this_box_amd_unified_no_nvidia_no_apple():
     assert 0 < p.usable_mem_mb < p.ram_total_mb
 
 
+
+# ── 14 Oct stranger QC F9: profile said "dedicated (VRAM size unread)" on a Strix Halo ──
+# In a container or a fresh install there is no rocm-smi, so the GPU is named by lspci
+# only (no gfx id, no SKU). recommend and profile's own "hardware class" line already knew
+# the box from the catalog ("128 GB LPDDR5X-8000 unified"); the memory line contradicted it.
+_LSPCI_UBUNTU_STRIX = ("c6:00.0 Display controller [0380]: Advanced Micro Devices, Inc. "
+                       "[AMD/ATI] Device [1002:1586] (rev c1)\n")
+_LSPCI_RX7900 = ("03:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. "
+                 "[AMD/ATI] Navi 31 [Radeon RX 7900 XT/7900 XTX] [1002:744c] (rev c8)\n")
+_DESKTOP_CPU = "processor\t: 0\nmodel name\t: AMD Ryzen 9 7950X 16-Core Processor\n"
+
+
+def _profile_text():
+    import io
+    import re as _re
+    from contextlib import redirect_stdout
+    from deneb import cli
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        cli.cmd_profile([])
+    return _re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+
+
+def test_strix_named_only_by_lspci_is_unified_ubuntu_and_fedora_names():
+    for lspci in (_LSPCI_UBUNTU_STRIX, load("lspci_strix.txt")):
+        with simulated_box({"lspci -nn": lspci}, _LINUX_READS):
+            p = hardware.profile_hardware()
+            out = _profile_text()
+        g = p.gpus[0]
+        assert g.vendor == "amd" and g.memory_kind == "unified", (lspci, g)
+        assert g.unified_mem_mb == p.ram_total_mb == 126908
+        assert 0 < p.usable_mem_mb < p.ram_total_mb
+        assert "memory: unified" in out and "dedicated" not in out, out
+
+
+def test_a_discrete_amd_card_without_rocm_smi_stays_dedicated():
+    with simulated_box({"lspci -nn": _LSPCI_RX7900},
+                       {"/proc/cpuinfo": _DESKTOP_CPU, "/proc/meminfo": load("proc_meminfo.txt")}):
+        p = hardware.profile_hardware()
+    assert p.gpus[0].memory_kind == "dedicated"
+
+
+def test_no_internal_phase_jargon_in_what_profile_prints():
+    for run_map, reads in (({"lspci -nn": _LSPCI_UBUNTU_STRIX}, _LINUX_READS),
+                           ({"rocm-smi --showproductname": load("rocm-smi_strix_gfx1151.json")},
+                            _LINUX_READS),
+                           ({}, _LINUX_READS)):
+        with simulated_box(run_map, reads):
+            out = _profile_text()
+        assert "Phase" not in out, out
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

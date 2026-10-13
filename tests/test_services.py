@@ -28,8 +28,7 @@ def test_real_user_phrasings_resolve():
     cases = {
         "gemma": "llm", "gemma 4": "llm", "llm": "llm", "chat": "llm",
         "qwen vlm": "vlm", "vlm": "vlm", "vision": "vlm", "qwen3-vl": "vlm",
-        "surya": "surya", "ocr": "surya",
-        "surya 2": "surya2", "surya2": "surya2",
+        "surya": "ocr", "ocr": "ocr", "surya 2": "ocr", "surya2": "ocr",
         "gateway": "gateway", "caddy": "gateway", "traefik": "gateway", "endpoint": "gateway",
         "cloudflared": "tunnel", "tunnel": "tunnel",
     }
@@ -53,7 +52,7 @@ def test_gateway_comes_before_the_tunnel():
 
 def test_backends_come_before_the_gateway():
     order = list(sv.STACK_ORDER)
-    for backend in ("llm", "vlm", "surya2"):
+    for backend in ("llm", "vlm", "ocr"):
         assert order.index(backend) < order.index("gateway")
 
 
@@ -61,7 +60,7 @@ def test_tunnel_targets_the_gateway_not_a_model_port():
     tunnel = sv.SERVICES["tunnel"]
     commands = " ".join(s.command for s in tunnel.steps)
     assert "8002" in commands, "the tunnel must point at the gateway"
-    for model_port in ("8001", "8080", "8093"):
+    for model_port in ("8001", "8080", "8082"):
         assert f":{model_port}" not in commands, (
             f"tunnel points at {model_port} - that exposes an unauthenticated model")
 
@@ -80,34 +79,42 @@ def test_gateway_tells_you_to_verify_from_another_machine():
     assert "another machine" in blob or "different machine" in blob
 
 
-def test_vision_and_ocr_backends_bind_loopback_only():
-    # Only the LLM binds 0.0.0.0, and only because the gateway fronts it - which its own
-    # warning says. Everything else must stay on loopback.
-    for key in ("vlm", "surya2"):
+def test_every_backend_binds_loopback_only():
+    # The gateway runs on the same box and reaches loopback, so no command needs another bind.
+    for key in ("llm", "vlm", "ocr"):
         commands = " ".join(s.command for s in sv.SERVICES[key].steps)
         assert "0.0.0.0" not in commands, f"{key} must not bind every interface"
         assert "127.0.0.1" in commands
 
 
-def test_the_one_public_bind_is_flagged():
-    llm = sv.SERVICES["llm"]
-    exposed = [s for s in llm.steps if "0.0.0.0" in s.command]
-    assert exposed, "the LLM serve step vanished"
-    joined = " ".join(exposed[0].warnings).lower()
-    assert "gateway" in joined, "binding 0.0.0.0 must say why it is acceptable"
+def test_stack_output_never_binds_all_interfaces(capsys):
+    import re
+    from deneb import cli
+    assert cli.cmd_stack([]) == 0
+    out = capsys.readouterr().out
+    assert "0.0.0.0" not in out
+    assert "is deliberate here" not in out
+    for host in re.findall(r"--host\s+(\S+)", out):
+        assert host == "127.0.0.1", host
+
+
+def test_stack_ports_are_labelled_as_examples(capsys):
+    from deneb import cli
+    cli.cmd_stack([])
+    assert "example" in capsys.readouterr().out.lower()
 
 
 # ── correctness traps specific to these models ────────────────────────────────
 def test_vision_services_require_the_projector():
     # Without mmproj a vision model loads, answers text, and silently cannot see images.
-    for key in ("vlm", "surya2"):
+    for key in ("vlm", "ocr"):
         blob = " ".join(f"{s.command} {s.what}" for s in sv.SERVICES[key].steps)
         assert "mmproj" in blob, f"{key} must fetch and pass the mmproj projector"
 
 
 def test_ocr_runs_at_temperature_zero():
     # OCR is transcription. Any sampling temperature invents characters.
-    commands = " ".join(s.command for s in sv.SERVICES["surya2"].steps)
+    commands = " ".join(s.command for s in sv.SERVICES["ocr"].steps)
     assert "--temp 0" in commands
 
 
@@ -117,54 +124,60 @@ def test_llm_keeps_its_speculative_draft_model():
     assert "-md " in commands, "the draft model is what makes speculative decoding work"
 
 
-def test_surya2_build_keeps_the_patch_step():
-    # Recovered from a working build's own GGUF metadata: it reports architecture "qwen35",
-    # a "qwen3vl_merger" projector and the model name "_Patched_Ckpt". That name is the
-    # fingerprint of a patched config. Without the patch the converter rejects the
-    # checkpoint outright, so this step is the whole build - and it is the one no
-    # documentation mentions.
-    blob = " ".join(f"{s.title} {s.what}" for s in sv.SERVICES["surya2"].steps).lower()
-    assert "patch" in blob
-    assert "qwen35" in blob and "qwen3vl_merger" in blob
+def test_ocr_uses_the_published_gguf_not_a_hand_patched_checkpoint():
+    # Datalab publishes Surya 2 as a GGUF (datalab-to/surya-ocr-2-gguf). An earlier version
+    # of this advice had people patch the checkpoint's config and convert it themselves,
+    # which was one machine's history, not the way to get it.
+    ocr = sv.SERVICES["ocr"]
+    commands = " ".join(s.command for s in ocr.steps)
+    assert "hf download datalab-to/surya-ocr-2-gguf" in commands
+    blob = " ".join(f"{s.title} {s.what} {s.command}" for s in ocr.steps).lower()
+    for gone in ("patch", "convert_hf_to_gguf", "config.json", "qwen3vl_merger"):
+        assert gone not in blob, gone
 
 
-def test_surya2_is_not_quantised():
-    # The deployed model is f16 (GGUF file_type 1). An earlier version of this advice told
-    # people to quantise to Q4_K_M, which is not what runs - and on a 630M OCR model the
-    # saving is trivial while the accuracy loss is silent.
-    steps = sv.SERVICES["surya2"].steps
+def test_ocr_is_not_quantised():
+    # The published GGUF is 16-bit. On a 650M OCR model the saving is trivial while the
+    # accuracy loss is silent.
+    steps = sv.SERVICES["ocr"].steps
     commands = " ".join(s.command for s in steps)
-    assert "llama-quantize" not in commands
-    assert "f16" in commands.lower()
+    assert "llama-quantize" not in commands and "q4_k" not in commands.lower()
     blob = " ".join(f"{s.what} {s.expect}" for s in steps).lower()
-    assert "unquantised" in blob or "f16" in blob
+    assert "16-bit" in blob
 
 
-def test_surya2_conversion_writes_partial_then_moves():
-    # A truncated GGUF still loads and then misbehaves, which is the worst failure shape.
-    commands = " ".join(s.command for s in sv.SERVICES["surya2"].steps)
-    assert ".partial" in commands and "mv " in commands
-
-
-def test_surya_cutover_requires_a_comparison_first():
-    # A newer OCR model is not automatically better on someone's own documents, and wrong
-    # characters look exactly like right ones.
+def test_ocr_is_checked_on_your_own_pages_first():
+    # A wrong character looks exactly like a right one, so nothing downstream catches it.
     blob = " ".join(f"{s.title} {s.what} {' '.join(s.warnings)}"
-                    for s in sv.SERVICES["surya2"].steps).lower()
-    assert "surya 1" in blob and ("compare" in blob or "comparison" in blob)
+                    for s in sv.SERVICES["ocr"].steps).lower()
+    assert "your own pages" in blob and "silent" in blob
+    assert "surya 1" not in blob
 
 
-def test_surya1_is_described_as_a_container_not_a_model_file():
-    # The point is that Surya 1 cannot be served by llama-server at all, which is why the
-    # model catalog could never have represented it. Asserted on what it IS rather than
-    # banning the word "gguf", since the text legitimately says "not a GGUF".
-    surya = sv.SERVICES["surya"]
-    blob = f"{surya.label} {surya.notes}".lower()
-    assert "container" in blob
-    assert "not a gguf" in blob or "not llama.cpp" in blob
-    commands = " ".join(s.command for s in surya.steps)
-    assert "podman" in commands or "docker" in commands
-    assert "llama-server" not in commands
+def test_the_stack_is_five_services_with_no_private_wrapper():
+    # Surya 1 needed an HTTP wrapper someone writes themselves, and the advice described one
+    # machine's wrapper contract. A recipe for strangers ships services they can fetch.
+    assert set(sv.SERVICES) == {"llm", "vlm", "ocr", "gateway", "tunnel"}
+    assert list(sv.STACK_ORDER) == ["llm", "vlm", "ocr", "gateway", "tunnel"]
+
+
+def test_no_service_text_names_a_deployment():
+    # Deneb ships recipes, never anyone's deployment. The real client / product / project
+    # terms to guard live in an env var so they are NOT published in this open repo (the
+    # public default below is generic placeholders). Locally, set
+    # DENEB_FORBIDDEN_TERMS="term1,term2,..." to assert against the real ones.
+    import os
+    forbidden = os.environ.get(
+        "DENEB_FORBIDDEN_TERMS", "acme-corp,example_project,widgetflow"
+    ).split(",")
+    for key, svc in sv.SERVICES.items():
+        blob = f"{svc.label} {svc.role} {svc.notes} " + " ".join(
+            f"{s.title} {s.what} {s.command} {s.expect} {' '.join(s.warnings)}"
+            for s in svc.steps)
+        for term in forbidden:
+            term = term.strip().lower()
+            if term:
+                assert term not in blob.lower(), (key, term)
 
 
 # ── purity ────────────────────────────────────────────────────────────────────
@@ -191,7 +204,7 @@ def test_dgx_is_warned_that_container_images_are_arch_specific():
     notes = " ".join(sv.platform_notes("dgx-spark")).lower()
     assert "aarch64" in notes
     assert "container" in notes
-    assert "surya 2" in notes, "the GGUF OCR path is the sound one on this arch"
+    assert "gguf" in notes and "surya 1" not in notes
 
 
 def test_dgx_notes_say_build_cuda_first():
@@ -215,51 +228,6 @@ def test_unknown_platform_yields_no_invented_caveats():
     assert sv.platform_notes("some-other-box") == []
 
 
-def test_surya1_says_it_ships_no_server():
-    # The trap: Surya 1 is a library, not a service. There is no upstream image to pull and
-    # no `surya serve`, so the HTTP wrapper is a component someone has to build. Planning
-    # around finding a ready-made one is how "just run Surya" becomes a lost day.
-    blob = " ".join(f"{s.title} {s.what} {' '.join(s.warnings)}"
-                    for s in sv.SERVICES["surya"].steps).lower()
-    assert "library" in blob
-    assert "no upstream image" in blob or "no official ready-made server image" in blob
-
-
-def test_surya1_wrapper_loads_models_once_not_per_request():
-    # Per-request loading passes a one-page test and then adds full model-load time to
-    # every call in production.
-    blob = " ".join(f"{s.what} {s.command} {' '.join(s.warnings)}"
-                    for s in sv.SERVICES["surya"].steps).lower()
-    assert "per request" in blob
-    assert "startup" in blob
-
-
-def test_surya1_health_must_not_go_green_early():
-    # A health endpoint that returns 200 before models are resident makes every orchestrator
-    # declare the service ready while the first real request times out.
-    surya = sv.SERVICES["surya"]
-    blob = " ".join(f"{s.expect} {' '.join(s.warnings)}" for s in surya.steps).lower()
-    assert "resident" in blob
-
-
-def test_surya1_contract_is_described_without_naming_any_deployment():
-    # Deneb ships the CONTRACT, never anyone's source. Nothing here may carry a customer,
-    # product or project name.
-    blob = " ".join(f"{s.title} {s.what} {s.command}" for s in sv.SERVICES["surya"].steps).lower()
-    assert "/healthz" in blob and "/layout" in blob
-    # The real client / product / project terms to guard live in an env var so they are
-    # NOT published in this open repo (the public default below is generic placeholders).
-    # Locally, set DENEB_FORBIDDEN_TERMS="term1,term2,..." to assert against the real ones.
-    import os
-    forbidden = os.environ.get(
-        "DENEB_FORBIDDEN_TERMS", "acme-corp,example_project,widgetflow"
-    ).split(",")
-    for term in forbidden:
-        term = term.strip().lower()
-        if term:
-            assert term not in blob
-
-
 # ── download and serve must agree ─────────────────────────────────────────────
 def _gguf_names(text):
     import re
@@ -275,7 +243,7 @@ def test_every_file_the_server_opens_is_one_the_download_fetches():
     order downloaded one set of filenames and then started a server pointing at another.
     Nothing in the text looked wrong, because each line was true in isolation.
     """
-    for key in ("llm", "vlm"):
+    for key in ("llm", "vlm", "ocr"):
         svc = sv.SERVICES[key]
         fetched, opened = set(), set()
         for step in svc.steps:

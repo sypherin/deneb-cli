@@ -55,6 +55,13 @@ class FitResult:
     caveats: list = field(default_factory=list)
     need_mb: int = 0
     est_tps: Optional[tuple] = None   # (low, high) decode tok/s when bandwidth is known
+    tight: bool = False               # fits, but with less than the KV/context headroom below
+
+
+def is_tight(headroom_mb: int, need_mb: int) -> bool:
+    """True when a model fits but leaves less spare memory than the documented KV/context
+    allowance: the larger of a 2000 MB floor and 10% of the need."""
+    return 0 <= headroom_mb < max(_TIGHT_FLOOR_MB, int(_TIGHT_FRACTION * need_mb))
 
 
 def RUNTIME_RESERVE_MB(size_mb: int) -> int:
@@ -147,8 +154,7 @@ def _caveats(model, quant, profile, fits_ok: bool, headroom_mb: int,
 
     # 3. tight fit (fits, but little spare — reduced context / OOM risk under load).
     if fits_ok:
-        threshold = max(_TIGHT_FLOOR_MB, int(_TIGHT_FRACTION * need_mb))
-        if headroom_mb < threshold:
+        if is_tight(headroom_mb, need_mb):
             caveats.append(
                 f"tight fit: only ~{headroom_mb} MB spare — expect reduced context "
                 "length and possible OOM under load.")
@@ -219,7 +225,7 @@ def fits(model, quant, profile, bw_gbps=None) -> FitResult:
                            budget_unknown=False)
         return FitResult(fits=fits_ok, headroom_mb=headroom_mb,
                          expected_speed_tier=tier, caveats=caveats, need_mb=need_mb,
-                         est_tps=est)
+                         est_tps=est, tight=fits_ok and is_tight(headroom_mb, need_mb))
     except Exception:  # noqa: BLE001 — the fit math must never crash the caller (PLAT-03)
         return FitResult(fits=False, headroom_mb=0, expected_speed_tier="very-slow",
                          caveats=["fit could not be computed for this model/box."],

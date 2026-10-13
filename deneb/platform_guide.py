@@ -55,7 +55,7 @@ _FAMILY_BY_ID = {
 _INSTALL_BY_FAMILY = {
     "fedora": "sudo dnf -y install",
     "debian": "sudo apt-get install -y",
-    "arch": "sudo pacman -S --noconfirm",
+    "arch": "sudo pacman -S --needed --noconfirm",
 }
 
 
@@ -104,6 +104,20 @@ class GuideStep:
     warnings: list = field(default_factory=list)
     verify: str = ""            # command that proves the step worked
     expect: str = ""            # what a correct verify looks like
+    by_family: dict = field(default_factory=dict)   # distro family -> command, when it differs
+
+
+def step_command(step, family: str) -> str:
+    """The command to print for a step on a distro family. A step with no per-family forms
+    prints its one command. When the family is unknown, every form is listed with its family
+    named, rather than guessing one."""
+    forms = step.by_family
+    if not forms:
+        return step.command
+    fam = (family or "").lower()
+    if fam in forms:
+        return forms[fam]
+    return "  or  ".join(f"{cmd}  ({name} family)" for name, cmd in forms.items())
 
 
 @dataclass
@@ -126,8 +140,8 @@ _SUDO_WARNING = "needs sudo - changes system configuration with root privilege."
 _STRIX = PlatformGuide(
     label="AMD Strix Halo (Ryzen AI Max, gfx1151)",
     applies_to="gfx1151 / gfx1150 iGPU, 128 GB unified memory",
-    recommended_os="Fedora 43 (Fedora 44 carries more RDNA 3.5 fixes in mesa 26.0)",
-    source="on-prem private LLM runbook + github.com/sypherin/strix-halo-setup",
+    recommended_os="Fedora 43 or newer, or any distro on kernel 6.18.4+ (step 2)",
+    source="github.com/sypherin/strix-halo-setup",
     steps=[
         GuideStep(
             title="BIOS: set UMA Frame Buffer Size to 512 MB",
@@ -147,7 +161,7 @@ _STRIX = PlatformGuide(
                 "instability that can hang it hard, with nothing useful in the logs."),
             command="uname -r",
             verify="uname -r",
-            expect="6.18.4 or newer (Fedora 43 ships 7.0.x by default)",
+            expect="6.18.4 or newer",
         ),
         GuideStep(
             title="Confirm the GPU is actually recognised",
@@ -174,24 +188,34 @@ _STRIX = PlatformGuide(
             title="Regenerate the bootloader config",
             what="Writes the new command line into the boot configuration.",
             command="sudo grub2-mkconfig -o /boot/grub2/grub.cfg",
+            by_family={
+                "debian": "sudo update-grub",
+                "arch": "sudo grub-mkconfig -o /boot/grub/grub.cfg",
+                "fedora": "sudo grub2-mkconfig -o /boot/grub2/grub.cfg",
+            },
             warnings=[_SUDO_WARNING, _REBOOT_WARNING],
         ),
         GuideStep(
             title="Cap dirty writeback so heavy jobs cannot freeze the box",
             what=_plain(
-                "tuned's throughput-performance profile sets dirty_ratio=40, which on a "
-                "124 GiB box permits roughly 50 GiB of dirty pages before the kernel "
-                "throttles writers. When that ceiling is hit every process touching the "
-                "filesystem blocks, and the desktop stops responding. Worse, this kernel has "
-                "hung-task detection compiled out, so the freeze logs absolutely nothing. "
-                "Set absolute byte limits instead, via a tuned profile so the setting is not "
-                "reverted by a power-profile change. Diagnostic signature: load average very "
-                "high while CPU pressure is near zero and io pressure is high."),
-            command="cat /proc/sys/vm/dirty_bytes /proc/sys/vm/dirty_background_bytes",
-            verify="cat /proc/sys/vm/dirty_bytes",
-            expect="8589934592 (8 GiB), not 0 - a 0 means the ratio-based default is still active",
-            warnings=["use dirty_bytes, not dirty_ratio: the ratio scales with RAM and is "
-                      "deprecated because it does not support profile inheritance."],
+                "By default the kernel lets dirty pages grow to a share of RAM (dirty_ratio; "
+                "tuned's throughput-performance profile raises it to 40%), which on a box "
+                "with this much memory is tens of GiB before writers are throttled. When that "
+                "ceiling is hit every process touching the filesystem blocks, and the desktop "
+                "stops responding, often with nothing in the logs. Set absolute byte limits "
+                "instead. A file in /etc/sysctl.d applies at every boot, and tuned re-applies "
+                "it after its own profile settings, so a power-profile change does not undo "
+                "it. Diagnostic signature: load average very high while CPU pressure is near "
+                "zero and io pressure is high."),
+            command=("printf 'vm.dirty_bytes = 8589934592\\nvm.dirty_background_bytes = "
+                     "4294967296\\n' | sudo tee /etc/sysctl.d/90-dirty-bytes.conf && "
+                     "sudo sysctl --system"),
+            verify="cat /proc/sys/vm/dirty_bytes /proc/sys/vm/dirty_background_bytes",
+            expect=("8589934592 then 4294967296 (8 GiB, 4 GiB). A 0 means the ratio-based "
+                    "default is still active"),
+            warnings=[_SUDO_WARNING,
+                      "use dirty_bytes, not dirty_ratio: a ratio scales with RAM, so the "
+                      "bigger the box, the bigger the backlog that freezes it."],
         ),
     ],
 )
@@ -263,13 +287,23 @@ _DGX = PlatformGuide(
 GUIDES = {"strix-halo": _STRIX, "dgx-spark": _DGX}
 
 
-def detect_platform(profile) -> str:
-    """Best-effort platform key from a HardwareProfile. "" when it is neither.
+# hardware-catalog device id -> guide key
+_CATALOG_PLATFORM = {"strix-halo-395": "strix-halo", "dgx-spark": "dgx-spark"}
+
+
+def detect_platform(profile, device=None) -> str:
+    """Best-effort platform key from a HardwareProfile, and the hardware-catalog device the
+    caller matched for it (the match recommend and profile use, which also reads the CPU
+    model, so a GPU that lspci calls only "[AMD/ATI] Device" is still known). "" when it is
+    neither.
 
     Never raises: a probe that came back degraded must produce "unknown", not a traceback,
     because the caller's job is to print advice either way.
     """
     try:
+        key = _CATALOG_PLATFORM.get(str((device or {}).get("id", "")), "")
+        if key:
+            return key
         for gpu in (getattr(profile, "gpus", None) or []):
             gfx = str((getattr(gpu, "extra", None) or {}).get("gfx", "")).lower()
             if gfx.startswith("gfx115"):

@@ -45,6 +45,16 @@ class Quant:
     name: str
     size_mb: int
     bpw: float
+    parts: int = 0      # files the quant is split into on Hugging Face; 0 = not recorded
+    tag: str = ""       # the label as the file names spell it; "" = not recorded
+
+    def file_labels(self) -> tuple:
+        """The labels this quant's files can carry. Recorded: its one tag. Not recorded (a
+        catalog written before tags were): the name, plus MXFP4_MOE for MXFP4, the one label
+        the catalog renames (unsloth names those files *-MXFP4_MOE.gguf)."""
+        if self.tag:
+            return (self.tag,)
+        return (self.name, "MXFP4_MOE") if self.name == "MXFP4" else (self.name,)
 
 
 @dataclass
@@ -58,6 +68,10 @@ class Model:
     quants          — available quants, ordered ascending by bpw.
     gguf_repo       — best-effort HF GGUF repo id (verify before download).
     notes           — free-text caveat (e.g. the vision-model mmproj requirement).
+    built_for       — the one use the model is made for ("coding" for a Coder model), or "".
+                      Set from the live catalog only (hf_catalog.entry_to_model): its Coder
+                      models are current, while this static list's coders are older than
+                      its general models and must not be lifted over them.
     """
     name: str
     params_b: float
@@ -67,6 +81,7 @@ class Model:
     quants: list
     gguf_repo: str
     notes: str = ""
+    built_for: str = ""
 
 
 def _quants(sizes: dict) -> list:

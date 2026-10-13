@@ -219,3 +219,145 @@ def test_module_is_pure():
         assert token not in src, f"platform_guide must stay pure; found {token!r}"
     imports = [ln for ln in src.splitlines() if ln.strip().startswith(("import ", "from "))]
     assert not any("tools" in ln for ln in imports), "must not import the executor module"
+
+
+def _guide_text(guide):
+    return " ".join(f"{guide.label} {guide.applies_to} {guide.recommended_os} "
+                    + " ".join(f"{s.title} {s.what} {s.command} {s.expect} {' '.join(s.warnings)}"
+                               for s in guide.steps) for _ in [0])
+
+
+def test_strix_guide_recommends_one_os_and_names_no_second_release():
+    import re
+    g = pg.GUIDES["strix-halo"]
+    text = _guide_text(g)
+    releases = set(re.findall(r"Fedora (\d+)", text))
+    assert releases == {"43"}, releases           # one recommended OS, no "44 is better" aside
+    assert "Fedora 44" not in text
+
+
+def test_guides_state_no_one_machines_facts():
+    for key, g in pg.GUIDES.items():
+        text = _guide_text(g)
+        assert "124 GiB" not in text, key
+        assert "this kernel has" not in text.lower(), key
+        assert "ships 7.0" not in text, key
+
+
+def test_setup_and_guide_share_one_distro_mapping():
+    from deneb import setup_advisor as sa
+    for text in ("ID=fedora\n", 'ID=nobara\nID_LIKE=fedora\n', "ID=ubuntu\n", "ID=arch\n", "ID=gentoo\n", ""):
+        fam = pg.distro_family(text)
+        assert sa.distro_family(text) == {"fedora": "dnf", "debian": "apt", "arch": "pacman", "": "unknown"}[fam]
+
+
+# ── bootloader step: one command per distro family ───────────────────────────
+def _boot_step():
+    return next(s for s in pg.guide_for("strix-halo").steps
+                if s.title == "Regenerate the bootloader config")
+
+
+def test_bootloader_command_is_right_for_each_family():
+    step = _boot_step()
+    assert pg.step_command(step, "debian") == "sudo update-grub"
+    assert pg.step_command(step, "arch") == "sudo grub-mkconfig -o /boot/grub/grub.cfg"
+    assert pg.step_command(step, "fedora") == "sudo grub2-mkconfig -o /boot/grub2/grub.cfg"
+
+
+def test_bootloader_command_never_hands_a_debian_box_the_fedora_form():
+    step = _boot_step()
+    for fam in ("debian", "arch"):
+        assert "grub2-mkconfig" not in pg.step_command(step, fam)
+
+
+def test_unknown_family_gets_every_form_not_a_guess():
+    out = pg.step_command(_boot_step(), "")
+    for needle in ("update-grub", "grub-mkconfig -o /boot/grub/grub.cfg", "grub2-mkconfig"):
+        assert needle in out
+
+
+def test_guide_cli_prints_the_box_family_bootloader_command(monkeypatch, capsys):
+    import builtins
+    from deneb import cli
+    real_open = builtins.open
+
+    def fake_open(path, *a, **k):
+        if str(path) == "/etc/os-release":
+            import io
+            return io.StringIO(_UBUNTU)
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    assert cli.cmd_guide(["strix-halo"]) == 0
+    out = capsys.readouterr().out
+    assert "sudo update-grub" in out
+    assert "grub2-mkconfig" not in out
+
+
+# ── 14 Oct stranger QC F6: `deneb guide` could not tell what an Ubuntu Strix Halo was ──
+# Ubuntu 24.04's lspci names the GPU "[AMD/ATI] Device", with no "Strix" in it, and with no
+# rocm-smi there is no gfx id. recommend and profile knew the box from the hardware catalog.
+def test_detects_the_platform_from_the_catalog_device():
+    bare = _Profile([_GPU(name="Advanced Micro Devices, Inc. [AMD/ATI] Device", vendor="amd")])
+    assert pg.detect_platform(bare) == ""
+    assert pg.detect_platform(bare, {"id": "strix-halo-395"}) == "strix-halo"
+    assert pg.detect_platform(_Profile([]), {"id": "dgx-spark"}) == "dgx-spark"
+    assert pg.detect_platform(bare, {"id": "rx-7900-xtx"}) == ""
+    assert pg.detect_platform(bare, {"no": "id"}) == ""
+
+
+def test_guide_cli_detects_an_ubuntu_strix_halo(monkeypatch, capsys):
+    from deneb import cli, hardware
+    gpu = hardware.GPUInfo(vendor="amd", name="Advanced Micro Devices, Inc. [AMD/ATI] Device",
+                           backend="rocm")
+    prof = hardware.HardwareProfile(cpu_model="AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+                                    ram_total_mb=126908, gpus=[gpu])
+    monkeypatch.setattr(hardware, "profile_hardware", lambda: prof)
+    assert cli.cmd_guide([]) == 0
+    out = capsys.readouterr().out
+    assert "Strix Halo" in out and "detected from this box" in out
+
+
+# ── 14 Oct stranger QC F7: guide content wrong, or written for the owner's own box ──
+def _strix_cli_out(monkeypatch, capsys):
+    import builtins
+    import io
+    import re
+    from deneb import cli
+    real_open = builtins.open
+    monkeypatch.setattr(builtins, "open", lambda path, *a, **k: io.StringIO(_UBUNTU)
+                        if str(path) == "/etc/os-release" else real_open(path, *a, **k))
+    assert cli.cmd_guide(["strix-halo"]) == 0
+    return re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+
+
+def test_strix_os_line_does_not_tell_a_newer_or_other_distro_to_reinstall():
+    os_line = pg.GUIDES["strix-halo"].recommended_os
+    assert "or newer" in os_line and "6.18.4" in os_line, os_line
+
+
+def test_dirty_writeback_step_prints_a_command_that_sets_it():
+    step = next(s for s in pg.GUIDES["strix-halo"].steps if "dirty" in s.title.lower())
+    cmd = step.command
+    assert "vm.dirty_bytes = 8589934592" in cmd and "vm.dirty_background_bytes" in cmd, cmd
+    assert "/etc/sysctl.d/" in cmd and "sysctl --system" in cmd, cmd
+    assert pg._SUDO_WARNING in step.warnings
+    assert step.verify.startswith("cat /proc/sys/vm/dirty_bytes")
+
+
+def test_guides_carry_no_owner_prose():
+    for key, g in pg.GUIDES.items():
+        text = _guide_text(g) + " " + g.source
+        for owner in ("check yours", "throughput-performance profile sets",
+                      "private LLM runbook", "on-prem"):
+            assert owner not in text, (key, owner)
+
+
+def test_guide_prose_fits_80_columns(monkeypatch, capsys):
+    out = _strix_cli_out(monkeypatch, capsys)
+    cmds = {pg.step_command(s, "debian") for s in pg.GUIDES["strix-halo"].steps} | \
+        {s.verify for s in pg.GUIDES["strix-halo"].steps}
+    wide = [ln for ln in out.splitlines() if len(ln) > 80 and ln.strip() not in cmds
+            and not any(c and c in ln for c in cmds)]
+    assert not wide, wide
+

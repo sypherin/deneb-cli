@@ -327,10 +327,14 @@ def parse_lspci_gpus(text: str) -> list:
 
 
 # ── classify_memory (HW-03) ──────────────────────────────────────────────────
-def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int]) -> MemoryClassification:
+def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int],
+                    unified_hint: bool = False) -> MemoryClassification:
     """Decide unified vs dedicated and compute the usable memory budget.
 
-    Rules (coarse; Phase-2 fit math refines the exact numbers):
+    unified_hint: the hardware catalog knows this box has unified memory (see
+    _catalog_unified_vendor); it decides a GPU whose own tool gave nothing to go on.
+
+    Rules (coarse; recommend's fit math sizes each model against the budget):
       - Apple  -> always unified.
       - AMD    -> unified when the GFX version is a known APU, OR the SKU starts 'STRX',
                   OR the VRAM carve-out is implausibly small vs system RAM (a BIOS
@@ -360,6 +364,7 @@ def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int]) -> MemoryClassifi
             # parts are not, and a DGX Spark is exactly the kind of box Deneb targets.
             name = (gpu.name or "").lower()
             unified = any(marker in name for marker in _UNIFIED_NVIDIA_MARKERS)
+        unified = unified or unified_hint
 
         if unified:
             gpu.memory_kind = "unified"
@@ -377,7 +382,7 @@ def classify_memory(gpu: GPUInfo, ram_total_mb: Optional[int]) -> MemoryClassifi
                 memory_kind="unified", unified_mem_mb=ram_total_mb, usable_mem_mb=usable,
                 note=(f"unified memory: the GPU shares the ~{ram_total_mb} MB system-RAM pool "
                       f"(NOT the small VRAM carve-out); reserved {headroom} MB headroom "
-                      f"(coarse, Phase-2-refined) so the box does not freeze."))
+                      f"so the box does not freeze."))
 
         # dedicated
         gpu.memory_kind = "dedicated"
@@ -486,6 +491,22 @@ def _safe_probe(fn, notes: list, label: str) -> list:
         return []
 
 
+def _catalog_unified_vendor(gpus: list, cpu_model: str) -> str:
+    """The GPU vendor of the catalog box this is, when that box has unified memory, else "".
+    Same match as recommend and profile's "hardware class" line (GPU names, gfx ids, CPU
+    model), so a Strix Halo named only "[AMD/ATI] Device" by lspci is still known by its CPU."""
+    try:
+        from . import speed
+        names = [g.name or "" for g in gpus]
+        names += [str((g.extra or {}).get("gfx", "")) for g in gpus]
+        dev = speed.match_device(names + [cpu_model or ""], speed.load_devices())
+        if dev and "unified" in str(dev.get("mem_type", "")).lower():
+            return str(dev.get("vendor", "")).lower()
+    except Exception:  # noqa: BLE001 — a catalog problem must never crash the profile
+        pass
+    return ""
+
+
 def profile_hardware() -> HardwareProfile:
     """Read the real machine through the allowlisted read-only `tools` boundary and
     assemble a full HardwareProfile. Every vendor path is INDEPENDENT and degrades to
@@ -555,7 +576,10 @@ def profile_hardware() -> HardwareProfile:
             seen.add(v)
 
     # ── classify memory per GPU (unified vs dedicated + usable budget) ──
-    classifications = [classify_memory(g, ram_total_mb) for g in gpus]
+    # A GPU whose tool read no VRAM (lspci only: no gfx id, no SKU) takes the catalog's word.
+    uv = _catalog_unified_vendor(gpus, cpu_model)
+    classifications = [classify_memory(g, ram_total_mb, unified_hint=bool(
+        uv and (g.vendor or "").lower() == uv and not g.vram_mb)) for g in gpus]
 
     # ── primary backend + usable-memory budget ──
     primary_backend = next((g.backend for g in gpus if g.backend), "cpu")
@@ -573,7 +597,7 @@ def profile_hardware() -> HardwareProfile:
         usable_mem_mb = max(0, ram_total_mb - headroom)
         if not gpus:
             notes.append(f"no GPU vendor tool present — CPU-only; usable budget = system RAM "
-                         f"minus {headroom} MB headroom (coarse, Phase-2-refined).")
+                         f"minus {headroom} MB headroom.")
 
     return HardwareProfile(
         os=system, arch=arch, kernel=kernel,

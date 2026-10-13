@@ -8,8 +8,10 @@ input always yields the same order (deterministic ranking with a stable name tie
 
 Ranking (per the Plan 02-02 spec), applied to the FITTING candidates DESCENDING with
 model.name ASCENDING as the final stable tie-break:
-  1. specificity      — 1 if use_case is one of the model's own capabilities, else 0
-                        (a "general"-only model is an eligible fallback but ranks below a
+  1. specificity      — 2 when the catalog marks the model as built for use_case
+                        (Model.built_for: the live catalog's Coder models, for coding),
+                        1 if use_case is one of the model's own capabilities, else 0 (a
+                        "general"-only model is an eligible fallback but ranks below a
                         specialist for a specialized use-case).
   2. runs_acceptably  — 1 unless the (fitting) model would crawl (very-slow tier); demotes
                         giants that "fit" but are unusably slow.
@@ -89,16 +91,18 @@ def _eligible(use_case: str, catalog=None) -> list:
     return out
 
 
-def _best_fitting_quant(model, profile, bw_gbps=None):
-    """Among the model's quants that fit, the highest-bpw one (best quality that still fits),
-    with its FitResult. Returns (quant, fit) or (None, None) when nothing fits."""
-    best = None  # (bpw, quant, fitresult)
+def best_fitting_quant(model, profile, bw_gbps=None):
+    """Among the model's quants that fit, the best one: a quant with KV headroom beats a tight
+    one, then the highest bpw (best quality). Returns (quant, fit) or (None, None) when nothing
+    fits."""
+    best = None  # (key, quant, fitresult) with key = (has KV headroom, bpw)
     for q in getattr(model, "quants", None) or []:
         fr = fits(model, q, profile, bw_gbps)
         if fr.fits:
             bpw = float(getattr(q, "bpw", 0) or 0)
-            if best is None or bpw > best[0]:
-                best = (bpw, q, fr)
+            key = (not getattr(fr, "tight", False), bpw)   # a quant with KV headroom beats a tight one
+            if best is None or key > best[0]:
+                best = (key, q, fr)
     if best is None:
         return None, None
     return best[1], best[2]
@@ -134,25 +138,38 @@ def quality_factor(qname) -> float:
     return 1.0
 
 
+def built_for(model, use_case: str) -> bool:
+    """True when the catalog marks the model as made for `use_case` (Model.built_for: the live
+    catalog's Coder models)."""
+    return bool(use_case) and (getattr(model, "built_for", "") or "") == use_case
+
+
 def _rank_key(cand, use_case: str) -> tuple:
     """The DESCENDING composite sort key for a fitting candidate (model.name is applied as a
     separate ascending pre-sort, so equal-key candidates stay name-ordered)."""
     model, quant, fr = cand
     caps = getattr(model, "capabilities", None) or []
-    specificity = 1 if use_case in caps else 0
+    comfortable = 0 if getattr(fr, "tight", False) else 1   # a tight pick is never #1 over a roomy one
     runs_acceptably = 1 if getattr(fr, "expected_speed_tier", "") != "very-slow" else 0
+    # built for the use only lifts a pick that also runs acceptably here
+    specificity = (2 if built_for(model, use_case) and runs_acceptably
+                   else 1 if use_case in caps else 0)
     capability_proxy = float(getattr(model, "params_b", 0) or 0) \
         * quality_factor(getattr(quant, "name", ""))
     speed_rank = _speed_rank(getattr(fr, "expected_speed_tier", ""))
     headroom = int(getattr(fr, "headroom_mb", 0) or 0)
     bpw = float(getattr(quant, "bpw", 0) or 0)
-    return (specificity, runs_acceptably, capability_proxy, speed_rank, headroom, bpw)
+    return (comfortable, specificity, runs_acceptably, capability_proxy, speed_rank, headroom, bpw)
 
 
 # ── why-strings (pure, deterministic, no LLM, no em-dash) ─────────────────────
 def _role_phrase(model, use_case: str, is_top: bool) -> str:
-    if is_top:
-        return f"most capable {use_case} model"
+    built = built_for(model, use_case)
+    if is_top:   # the order is size x quant, not a measured skill, so claim no more than that
+        return (f"built for {use_case}, top pick by size and quant" if built
+                else f"top {use_case} pick by size and quant")
+    if built:
+        return f"built for {use_case}"
     caps = getattr(model, "capabilities", None) or []
     if use_case in caps:
         return f"{use_case}-capable"
@@ -176,7 +193,10 @@ def _why(model, quant, fr, use_case: str, profile, is_top: bool) -> str:
     if quant_bits(qname) <= 3:
         line += f" {quant_bits(qname)}-bit quant: noticeable quality loss vs 4-bit and up."
     caveats = getattr(fr, "caveats", None) or []
-    if caveats:
+    if getattr(fr, "tight", False):
+        # The tight reason always shows, even when another caveat (a kernel note) comes first.
+        line += " " + next((str(c) for c in caveats if str(c).startswith("tight fit")), "tight fit.")
+    elif caveats:
         line += " " + str(caveats[0])
     return _plain(line)
 
@@ -261,7 +281,7 @@ def recommend(profile, use_case, top_n: int = 3, catalog=None, bw_gbps=None) -> 
 
         candidates = []
         for m in eligible:
-            q, fr = _best_fitting_quant(m, profile, bw_gbps)
+            q, fr = best_fitting_quant(m, profile, bw_gbps)
             if q is not None:
                 candidates.append((m, q, fr))
 

@@ -26,7 +26,7 @@ def _refused(res):
 
 # ── commands that must ALWAYS be refused ─────────────────────────────────────
 REFUSE = [
-    "rm -rf /home/cf/models",          # destroy data
+    "rm -rf /home/x/models",          # destroy data
     "rm file.txt",
     "rmdir /opt/llama",
     "mv /opt/llama /tmp/x",            # move = can destroy
@@ -70,13 +70,13 @@ REFUSE = [
 ALLOW = [
     "systemctl --user daemon-reload",
     "systemctl --user restart llama-server.service",
-    "systemctl --user start neo-gateway.service",
+    "systemctl --user start llm-gateway.service",
     "systemctl --user stop llama-server.service",
     "systemctl --user enable llama-server.service",
     "systemctl --user disable llama-server.service",
     "systemctl --user reset-failed llama-server.service",
     "mkdir -p /home/x/models",
-    "ln -s /home/cf/build/llama.cpp/build/bin/llama-server /home/x/.local/bin/llama-server",
+    "ln -s /home/x/build/llama.cpp/build/bin/llama-server /home/x/.local/bin/llama-server",
 ]
 
 
@@ -98,12 +98,12 @@ def test_write_file_backs_up_existing():
     p = os.path.join(d, "llama-server.service")
     with open(p, "w") as f:
         f.write("ExecStart=/opt/llama/llama-server\n")   # the wrong path
-    res = tools.write_file(p, "ExecStart=/home/cf/build/bin/llama-server\n")
+    res = tools.write_file(p, "ExecStart=/home/x/build/bin/llama-server\n")
     assert res.get("ok") is True
     assert res.get("backup") and os.path.exists(res["backup"]), "no backup was made"
     # the backup preserves the ORIGINAL, the file has the NEW content
     assert "opt/llama" in open(res["backup"]).read()
-    assert "home/cf/build" in open(p).read()
+    assert "home/x/build" in open(p).read()
 
 
 def test_write_file_refuses_secret_and_system():
