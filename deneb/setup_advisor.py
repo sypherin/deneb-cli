@@ -419,8 +419,19 @@ def _service_step(pb: "Playbook", basename: str, labels: tuple, vision: bool) ->
         title="Keep it running (systemd user service)", command=command, kind="service",
         what=_plain("writes a user service for the server above and starts it, so it restarts "
                     "after a crash and `deneb check` / `deneb watch` can find and name it."),
-        warnings=[_plain(_UNIT_WARNING),
-                  _plain("to keep it up after you log out: `loginctl enable-linger $USER`.")])
+        warnings=[_plain(_UNIT_WARNING)])
+
+
+# A user service lives only while its owner is logged in: over SSH the server stops at logout and
+# starts again at the next login (QC on a cloud GPU, 20 Oct). A command, not a warning line, so
+# following the steps top to bottom keeps it up.
+_LINGER_STEP = Step(
+    title="Keep it running after you log out", command="loginctl enable-linger \"$(id -un)\"", kind="linger",
+    what=_plain("lets your user services run without a login session. Without it the model server "
+                "stops when you log out (an SSH session ending counts) and only starts again at your "
+                "next login."),
+    warnings=[_plain("if it asks for a password or says access denied, run it with sudo in front: "
+                     "sudo loginctl enable-linger \"$(id -un)\".")])
 
 
 _OLLAMA_SPLIT_ISSUE = "https://github.com/ollama/ollama/issues/5245"
@@ -611,8 +622,8 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
                 what=_plain("downloads the F16 mmproj projector GGUF (one file, not the BF16 and F32 "
                             "copies) - vision models need it alongside the weights to "
                             "process images"),
-                warnings=[_plain("downloads an extra projector file (usually a few "
-                                 "hundred MB).")],
+                warnings=[_plain("downloads an extra projector file (a few hundred MB to "
+                                 "over 1 GiB).")],
                 kind="note"))
 
         # (3) RUN — llama-server with platform flags, bound to 127.0.0.1 (SET-03 service).
@@ -621,7 +632,7 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
         # (4) SERVICE — a user unit running that same binary, the one check/watch look for.
         svc = _service_step(pb, basename, labels, vision)
         if svc is not None:
-            steps.append(svc)
+            steps += [svc, _LINGER_STEP]
 
         return steps
     except Exception:  # noqa: BLE001 — the advisory must degrade, never crash the caller (PLAT-03)

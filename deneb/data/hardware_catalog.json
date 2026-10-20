@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated": "2026-09-23",
+ "updated": "2026-10-20",
  "notes": "Decode speed on a single stream is bounded by memory bandwidth: tok/s ~= efficiency x bandwidth_GBps / GB_read_per_token (GB read per token ~= active params x bytes/param). efficiency 0.55-0.75 in practice. Specs are vendor figures; 'confidence' marks entries to re-verify. The landscape job flags hardware seen in the wild that is missing here. 'match' = lowercase substrings of the detected GPU/CPU name that identify the device; 'exclude' = substrings that rule it out (laptop variants have lower bandwidth).",
  "devices": [
   {
@@ -897,6 +897,112 @@
     "m1 ultra"
    ],
    "exclude": []
+  },
+  {
+   "id": "a10",
+   "name": "NVIDIA A10",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 24,
+   "mem_type": "GDDR6",
+   "bw_gbps": 600,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "ollama",
+    "sglang"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/products/a10-gpu/",
+   "confidence": "high",
+   "match": [
+    "nvidia a10"
+   ],
+   "exclude": [
+    "a100",
+    "a10g"
+   ],
+   "notes": "Common 1-GPU cloud rental (Lambda gpu_1x_a10)."
+  },
+  {
+   "id": "a10g",
+   "name": "NVIDIA A10G",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 24,
+   "mem_type": "GDDR6",
+   "bw_gbps": 600,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "ollama",
+    "sglang"
+   ],
+   "source": "https://aws.amazon.com/ec2/instance-types/g5/",
+   "confidence": "medium",
+   "match": [
+    "a10g"
+   ],
+   "exclude": [],
+   "notes": "AWS-only part (EC2 G5). AWS states 24 GB per GPU; the 600 GB/s is a third-party figure (getdeploying.com), not an NVIDIA or AWS datasheet."
+  },
+  {
+   "id": "l4",
+   "name": "NVIDIA L4",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 24,
+   "mem_type": "GDDR6",
+   "bw_gbps": 300,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "ollama",
+    "sglang"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/l4/",
+   "confidence": "high",
+   "match": [
+    "nvidia l4"
+   ],
+   "exclude": [
+    "l40"
+   ]
+  },
+  {
+   "id": "t4",
+   "name": "NVIDIA T4",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Turing sm_75",
+   "mem_gb": 16,
+   "mem_type": "GDDR6",
+   "bw_gbps": 320,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "llama.cpp",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/tesla-t4/",
+   "confidence": "high",
+   "match": [
+    "tesla t4",
+    "nvidia t4"
+   ],
+   "exclude": [
+    "t400",
+    "t4000"
+   ],
+   "notes": "NVIDIA lists 320+ GB/s."
   }
  ]
 }

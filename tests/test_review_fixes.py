@@ -351,7 +351,8 @@ def test_tunnel_ignores_editors_and_tails_that_mention_cloudflared():
 
 def test_tunnel_counts_the_real_binary_and_asks_about_its_pid():
     seen = _recording({"pgrep -af cloudflared": "123 vim cloudflared.yml\n999 /usr/bin/cloudflared tunnel run my-tunnel",
-                       "--user status 999": "● cloudflared-tunnel.service - tunnel"})
+                       "--user status 999": "● cloudflared-tunnel.service - tunnel",
+                       "ps -p 999 -o args=": "/usr/bin/cloudflared tunnel --url http://localhost:8002"})
     _, ok, ev, _ = check._chk_tunnel()
     assert ok is True and "cloudflared-tunnel.service" in ev
     assert any("status 999" in c for c in seen) and not any("status 123" in c for c in seen)

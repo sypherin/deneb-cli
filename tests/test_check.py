@@ -94,10 +94,15 @@ HEALTHY = {
     "pgrep -af llama-server": "876334 /usr/bin/llama-server -ngl 99 --port 8001 --jinja",
     "curl -s localhost:8002/v1/models": "unauthorized: missing api key",
     "pgrep -af cloudflared": "999 cloudflared tunnel run my-tunnel",
+    "ps -p 999 -o args=": "/usr/bin/cloudflared --config /etc/cloudflared/config.yml tunnel run",
     "curl -s localhost:8001/health": '{"status":"ok"}',
     "curl -s localhost:8001/v1/models": '{"data":[{"id":"/models/Qwen3.6.gguf"}]}',
     "models -maxdepth 2": "/home/x/models/Qwen3.6.gguf",
 }
+# the tunnel's config file, read (not run): its ingress routes a hostname to the key gateway
+HEALTHY_READS = {"/etc/cloudflared/config.yml": "tunnel: my-tunnel\ningress:\n"
+                 "  - hostname: llm.example.com\n    service: http://localhost:8002\n"
+                 "  - service: http_status:404\n"}
 
 
 def test_gpu_is_rocm_not_cuda_on_amd():
@@ -124,9 +129,9 @@ def test_service_reports_running_and_enabled():
 
 
 def test_tunnel_up():
-    _install(HEALTHY)
+    _install(HEALTHY, HEALTHY_READS)
     _, ok, ev, _ = check._chk_tunnel()
-    assert ok is True and "running" in ev
+    assert ok is True and "routes to the gateway (:8002)" in ev
 
 
 # ── whole checks: a broken box (CPU-only, no gateway, disabled service) ───────

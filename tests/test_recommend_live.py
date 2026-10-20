@@ -21,7 +21,7 @@ BOXES = [
 
 
 def test_ranking_uses_live_snapshot():
-    assert SOURCE.startswith("live catalog")
+    assert SOURCE.startswith("model list ") and "live" not in SOURCE
     assert any(m.name == "Qwen3.8-Flash-Next" for m in MODELS)
 
 

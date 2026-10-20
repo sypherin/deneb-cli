@@ -27,6 +27,9 @@ def _isolated_deneb(tmp_path, monkeypatch):
     # the real box may have Ollama installed: tests start from "not installed" and say otherwise
     monkeypatch.setattr(check, "_ollama_install", lambda: "", raising=False)
     monkeypatch.setattr(check, "_own_llama_unit_exists", lambda: False, raising=False)
+    # nor its unit files or its logind linger flag
+    monkeypatch.setattr(check, "_WRITTEN_UNIT_DIRS", (), raising=False)
+    monkeypatch.setattr(check, "_linger", lambda: None, raising=False)
     # recommend and setup name what serves: nothing, unless the test sets one up
     monkeypatch.setattr(check, "serving_now", lambda: None, raising=False)
     client.set_brain(None)

@@ -48,7 +48,7 @@ def test_distro_family_tolerates_quotes_and_junk():
 
 def test_install_command_is_distro_correct():
     assert pg.install_command("fedora", "vulkan-tools") == "sudo dnf -y install vulkan-tools"
-    assert pg.install_command("debian", "vulkan-tools") == "sudo apt-get install -y vulkan-tools"
+    assert pg.install_command("debian", "vulkan-tools") == "sudo apt-get update && sudo apt-get install -y vulkan-tools"
 
 
 def test_unknown_distro_says_so_rather_than_guessing_apt():

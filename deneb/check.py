@@ -139,11 +139,41 @@ def _own_llama_unit_exists() -> bool:
     return os.path.isfile(os.path.expanduser("~/.config/systemd/user/llama-server.service"))
 
 
+# Unit files a person wrote (not the ones a package ships), and the programs that make one a
+# model server. Read as files: no process is run.
+_WRITTEN_UNIT_DIRS = (("~/.config/systemd/user", "user"), ("/etc/systemd/system", "system"))
+_SERVER_EXEC = re.compile(r"^ExecStart=.*(llama-server|llama_cpp\.server|vllm|ollama serve)", re.M)
+
+
+def _server_unit_on_disk() -> tuple:
+    """(name, scope) of a unit file whose ExecStart runs a model server, ('', '') when none.
+    How plain `deneb check` names a stopped server: it has no record of where one was seen
+    (only `deneb watch` keeps one), so it looks for the unit that would start it."""
+    for d, scope in _WRITTEN_UNIT_DIRS:
+        try:
+            names = sorted(os.listdir(os.path.expanduser(d)))
+        except OSError:
+            continue
+        for n in names:
+            if not n.endswith(".service"):
+                continue
+            try:
+                with open(os.path.join(os.path.expanduser(d), n), errors="replace") as f:
+                    if _SERVER_EXEC.search(f.read(65536)):
+                        return n, scope
+            except OSError:
+                continue
+    return "", ""
+
+
 def _stopped_fix() -> str:
     """What to do when no server answers: name the last-seen unit, or say it was not found.
     Never a placeholder."""
     serving_port()
     unit = _hint["unit"]
+    if not unit and not _inferred["ollama"]:
+        name, scope = _server_unit_on_disk()
+        unit = (f"system:{name}" if scope == "system" else name) if name else ""
     if not unit and _inferred["ollama"]:
         how = _inferred["ollama"]
         start = {"system": "`sudo systemctl start ollama`",
@@ -441,8 +471,27 @@ def _chk_service():
         return ("Model service enabled + running", True,
                 f"{who} serving :{port} ⚠ (not enabled — won't auto-start after reboot)",
                 f"`{cmd}` so it survives a reboot")
+    if scope == "user" and at_boot in ("enabled", "static", "indirect") and _linger() is False:
+        # a user manager only runs while its owner is logged in, unless lingering is on
+        return ("Model service enabled + running", True,
+                f"{who} serving :{port} ⚠ (a user service: it stops when you log out and only "
+                "starts at your next login, not at boot)",
+                "`loginctl enable-linger \"$(id -un)\"` keeps it running (if it is refused: `sudo loginctl enable-linger \"$(id -un)\"`)")
     boot = f", {at_boot} at boot" if at_boot in ("enabled", "static", "indirect") else ""
     return ("Model service enabled + running", True, f"{who} serving :{port}{boot}", "")
+
+
+def _linger():
+    """True / False: whether systemd keeps this user's services running without a login
+    (logind's flag file); None when it can't be read (no logind, no user name)."""
+    try:
+        import pwd
+        user = pwd.getpwuid(os.getuid()).pw_name
+    except (ImportError, KeyError):
+        return None
+    if not os.path.isdir("/run/systemd/system"):   # not booted with systemd
+        return None
+    return os.path.exists(f"/var/lib/systemd/linger/{user}")
 
 
 def _mnt_ns(pid: str) -> str:
@@ -717,12 +766,39 @@ def _chk_model_file():
     m = re.search(r'"id"\s*:\s*"(/[^"]+\.gguf)"', mv)
     if m and "does not exist" not in _read(m.group(1)):
         return ("Model file present", True, m.group(1).split("/")[-1], "")
+    # 2b. A stopped server: the -m path in the unit that starts it (deneb setup writes the
+    #     resolved absolute path there).
+    path = _unit_model_path()
+    if path:
+        st = _probe(f"stat -L -c %s {path}").strip()
+        if st.isdigit():
+            return ("Model file present", True, f"{path.split('/')[-1]} ({_gib(int(st))})", "")
     # 3. The conventional models directory. Expanded here: commands run without a shell,
-    #    so a literal "~/models" was never found.
-    found = _probe(f"find {os.path.expanduser('~/models')} -maxdepth 2 -name '*.gguf'")
-    ok = ".gguf" in found
-    return ("Model file present", ok, (found.splitlines()[0].split("/")[-1] if ok else "no .gguf found"),
+    #    so a literal "~/models" was never found. A vision projector (mmproj) is not the model.
+    found = [ln for ln in _probe(f"find {os.path.expanduser('~/models')} -maxdepth 2 -name '*.gguf'").splitlines()
+             if ln.strip().endswith(".gguf") and "mmproj" not in ln.split("/")[-1].lower()]
+    ok = bool(found)
+    return ("Model file present", ok, (sorted(found)[0].split("/")[-1] if ok else "no .gguf found"),
             "no model file yet: run `deneb recommend`, then `deneb setup <model>`")
+
+
+def _unit_model_path() -> str:
+    """The absolute -m / --model path in the unit file that starts the model server, '' when
+    there is none (a unit can't be read, or names its model some other way)."""
+    name, scope = hinted_unit()
+    if not name:
+        name, scope = _server_unit_on_disk()
+    dirs = [d for d, s in _WRITTEN_UNIT_DIRS if s == scope] if name else []
+    for d in dirs:
+        try:
+            with open(os.path.join(os.path.expanduser(d), name), errors="replace") as f:
+                text = f.read(65536)
+        except OSError:
+            continue
+        text = re.sub(r"\\\n\s*", " ", text)   # an ExecStart= continued over lines with a backslash
+        m = re.search(r"""^ExecStart=.*?\s(?:-m|--model)[ =]["']?(/[^\s"']+)""", text, re.M)
+        return m.group(1) if m else ""
+    return ""
 
 
 _NOT_SET_UP = "not set up (optional: only needed to reach the model from other machines)"
@@ -761,12 +837,63 @@ def _chk_tunnel():
     pids = [m.group(1) for ln in _probe("pgrep -af cloudflared").splitlines()
             for m in [re.match(r"\s*(\d+)\s+(\S+)", ln)]
             if m and os.path.basename(m.group(2)) == "cloudflared"]
+    label = "Cloudflare tunnel live"
+    fix = "install + run cloudflared to expose the gateway outbound-only (no inbound ports)"
     if not pids:
-        return ("Cloudflare tunnel live", None, _NOT_SET_UP,
-                "install + run cloudflared to expose the gateway outbound-only (no inbound ports)")
-    unit, scope = _scoped_unit_of_pid(pids[0])
+        return (label, None, _NOT_SET_UP, fix)
+    # A running cloudflared is not yet this model's tunnel: cloud GPU images ship one for
+    # their own notebook (QC on a cloud GPU, 20 Oct). Count it only when it routes here, and
+    # read every cloudflared: the notebook's may be listed before the user's own.
+    port = serving_port()
+    found = [(_tunnel_rank(ports, port), pid, ports) for pid in pids
+             for ports in [_tunnel_ports(_probe(f"ps -p {pid} -o args=").strip())]]
+    _, pid, ports = max(found, key=lambda f: f[0])
+    unit, scope = _scoped_unit_of_pid(pid)
     who = (f"{unit} (system)" if scope == "system" else unit) or "cloudflared"
-    return ("Cloudflare tunnel live", True, f"{who} running", "")
+    if ports is None:
+        return (label, None, f"{who} runs, but its routes are kept in the Cloudflare dashboard, so "
+                "deneb can't see whether one reaches the gateway (:8002)", fix)
+    if port in ports:
+        return (label, True, f"{who} running ⚠ routes straight to the model on :{port}, with no key "
+                "in front", "route the tunnel to the key gateway on :8002 instead of the model port")
+    if 8002 in ports:
+        return (label, True, f"{who} running, routes to the gateway (:8002)", "")
+    where = ", ".join(f":{p}" for p in sorted(ports)) or "nothing local"
+    return (label, None, f"{who} runs, but routes to {where}, not to the gateway (:8002): it is "
+            "not a tunnel to this model", fix)
+
+
+def _tunnel_rank(ports, port) -> int:
+    # which cloudflared speaks for the row: one exposing the model port without a key is the
+    # finding that matters most, then one routing to the gateway, then one deneb can't read
+    if ports is None:
+        return 1
+    return 3 if port in ports else 2 if 8002 in ports else 0
+
+
+_CF_CONFIGS = ("~/.cloudflared/config.yml", "~/.cloudflared/config.yaml",
+               "/etc/cloudflared/config.yml", "/etc/cloudflared/config.yaml")
+# the scheme is optional (`--url localhost:8002` works) and an ingress value may be quoted
+_CF_LOCAL = r"""["']?(?:https?://)?(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d+)(?!\d)"""
+
+
+def _tunnel_ports(args: str):
+    """The local ports a cloudflared routes to, from its command line (`--url`) or its config
+    file's ingress rules (`service:`). None when the routes can't be read here: a token tunnel
+    keeps them in the Cloudflare dashboard, and a config file may be unreadable or missing."""
+    m = re.search(r"--url[= ](\S+)", args)
+    if m:
+        return {int(p) for p in re.findall(_CF_LOCAL, m.group(1))}
+    m = re.search(r"--config[= ](\S+)", args)
+    paths = [m.group(1)] if m else list(_CF_CONFIGS)
+    for path in paths:
+        text = _read(path)
+        if text.startswith("("):            # does not exist / permission denied / not a file
+            continue
+        if not re.search(r"^\s*-?\s*service:", text, re.M):
+            return None                     # no ingress here: the dashboard holds the routes
+        return {int(p) for p in re.findall(r"^\s*-?\s*service:\s*" + _CF_LOCAL, text, re.M)}
+    return None
 
 
 _CHECKS = [_chk_endpoint, _chk_service, _chk_gpu, _chk_model_file, _chk_gateway, _chk_tunnel]
@@ -804,6 +931,7 @@ def run() -> int:
     print(f"{_C['d']}running a read-only scan of this box…{_C['z']}")
     rows = [r[1:] for r in scan()]
     print()
+    shown = set()                           # one fault often fails two rows with the same fix
     for label, ok, ev, fix in rows:
         if ok is None:                      # not applicable or not set up: not a failure
             print(f"  {_C['d']}–{_C['z']} {label}  {_C['d']}— {ev}{_C['z']}")
@@ -814,17 +942,22 @@ def run() -> int:
         mark = f"{_C['g']}✓{_C['z']}" if ok else f"{_C['r']}✗{_C['z']}"
         print(f"  {mark} {label}  {_C['d']}— {ev}{_C['z']}")
         if not ok or ("⚠" in ev and fix):
-            print(f"      {_C['y']}fix:{_C['z']} {fix}")
+            print(f"      {_C['y']}fix:{_C['z']} {'same as above' if fix in shown else fix}")
+            shown.add(fix)
     print()
     n = sum(1 for r in rows if r[1] is False)
     unread = sum(1 for r in rows if r[1] == UNKNOWN)
     warned = sum(1 for r in rows if r[1] is True and "⚠" in r[2])
     if n:
         print(f"{_C['y']}{_C['b']}Not done yet — {n} item(s) left above.{_C['z']}")
-        if any(r[1] is False and "nothing is listening" in r[2] for r in rows) and _inferred["ollama"]:
+        down = any(r[1] is False and "nothing is listening" in r[2] for r in rows)
+        if down and _inferred["ollama"]:
             print(f"{_C['d']}Ollama is installed but not running. Start it as shown above, then "
                   f"re-run deneb check.{_C['z']}")
-        elif any(r[1] is False and "nothing is listening" in r[2] for r in rows):
+        elif down and _stopped_fix().startswith("start it again"):
+            print(f"{_C['d']}The model server is set up but stopped. Start it as shown above, then "
+                  f"re-run deneb check.{_C['z']}")
+        elif down:
             print(f"{_C['d']}No model server was found. Next: deneb recommend, then "
                   f"deneb setup <model>.{_C['z']}")
     elif unread or warned:

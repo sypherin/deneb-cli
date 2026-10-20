@@ -203,13 +203,15 @@ def write_json(path: str, payload: dict) -> None:
 
 def load_entries() -> tuple:
     """(entries, source_label). User cache wins over the bundled snapshot."""
-    for path, label in ((CACHE_PATH, "cache"), (SNAPSHOT_PATH, "bundled")):
+    # Said as what it is: a list fetched on a date, not a live feed (QC, 20 Oct)
+    for path, label in ((CACHE_PATH, "model list refreshed {}"),
+                        (SNAPSHOT_PATH, "model list of {}, shipped with deneb")):
         try:
             with open(path) as f:
                 d = json.load(f)
             ents = d.get("models") or []
             if ents:
-                return ents, f"{label} {str(d.get('generated', ''))[:10]}"
+                return ents, label.format(str(d.get("generated", ""))[:10])
         except (OSError, ValueError):
             continue
     return [], "none"
@@ -226,7 +228,7 @@ def ranking_catalog() -> tuple:
     from .models_catalog import CATALOG
     ents, label = load_entries()
     models = [m for m in (entry_to_model(e) for e in ents) if m]
-    return (models, f"live catalog ({label})") if models else (list(CATALOG), "built-in catalog")
+    return (models, label) if models else (list(CATALOG), "built-in model list")
 
 
 def all_models() -> list:

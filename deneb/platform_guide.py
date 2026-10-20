@@ -54,7 +54,8 @@ _FAMILY_BY_ID = {
 
 _INSTALL_BY_FAMILY = {
     "fedora": "sudo dnf -y install",
-    "debian": "sudo apt-get install -y",
+    # a fresh image ships a stale package index: install without update 404s (QC on a cloud GPU, 20 Oct)
+    "debian": "sudo apt-get update && sudo apt-get install -y",
     "arch": "sudo pacman -S --needed --noconfirm",
 }
 

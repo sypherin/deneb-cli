@@ -335,16 +335,18 @@ def cmd_recommend(argv=None) -> int:
         print(line)
     print()
 
-    print(f"  {_C['b']}{'#':<2} {'model':<30} {'quant':<11} "
-          f"{'memory':<18} {'speed':<9} {'est decode':<16}{_C['z']}")
+    # est decode needs the device's bandwidth: off the catalog, a column of dashes says nothing
+    cols = f"{'#':<2} {'model':<30} {'quant':<11} {'memory':<18} " + (
+        f"{'speed':<9} est decode" if bw else "speed")
+    print(f"  {_C['b']}{cols}{_C['z']}")
     for i, r in enumerate(recs, 1):
         name = (getattr(r.model, 'name', '') or '?')[:30]
         qname = getattr(r.quant, 'name', '') or '?'
         tier = getattr(r.fit, 'expected_speed_tier', '') or '?'
         col = _C['g'] if getattr(r.fit, 'fits', False) and not getattr(r.fit, 'tight', False) else _C['amber']
-        est = speed.fmt_tps(getattr(r.fit, "est_tps", None)) if bw else "-"
+        est = f" {speed.fmt_tps(getattr(r.fit, 'est_tps', None))}" if bw else ""
         print(f"  {_C['teal']}{i:<2}{_C['z']} {_C['b']}{name:<30}{_C['z']} "
-              f"{qname:<11} {col}{_fit_cell(r.fit):<18}{_C['z']} {tier:<9} {est:<16}")
+              f"{qname:<11} {col}{_fit_cell(r.fit):<18}{_C['z']} {f'{tier:<9}{est}'.rstrip()}")
         print(f"     {_C['d']}why: {r.why}{_C['z']}")
         need = setup_advisor.download_gib(r.quant)
         if need and free_gb is not None and need > free_gb:

@@ -213,7 +213,7 @@ def alert_text(changes: list):
         if c["kind"] == "unchanged":
             continue
         lines.append(f"- {_KIND_TAG[c['kind']]} {c['label']} [{c['to']}]: {c['evidence']}")
-        if c["to"] in ("warn", "fail") and c["fix"]:
+        if c["to"] in ("warn", "fail") and c["fix"] and f"  fix: {c['fix']}" not in lines:
             lines.append(f"  fix: {c['fix']}")
     return scrub("\n".join(lines))
 
@@ -682,7 +682,7 @@ def schedule_text(every: str) -> str:
         "chmod 600 ~/.config/deneb/watch.env",
         "echo 'DENEB_WATCH_NOTIFY=<your-webhook-url>' >> ~/.config/deneb/watch.env",
         f"\n{b}4. Keep it running while you are logged out{z}",
-        "loginctl enable-linger $USER",
+        "loginctl enable-linger \"$(id -un)\"",
         f"\n{b}Check it{z}",
         "systemctl --user list-timers deneb-watch.timer",
         "journalctl --user -u deneb-watch.service -e\n",
@@ -801,6 +801,7 @@ def _run(quiet: bool, url: str) -> int:
 
     p = _C
     kinds = {c["id"]: c["kind"] for c in changes}
+    shown = set()                           # one fault often fails two rows with the same fix
     for f in findings:
         k = kinds.get(f["id"], "unchanged")
         if quiet and k == "unchanged":
@@ -808,7 +809,8 @@ def _run(quiet: bool, url: str) -> int:
         mark = f"{p['d']}–{p['z']}" if f.get("na") else _mark(f["status"], p)
         print(f"  {mark} {f['label']}{_tag(k, p)}  {p['d']}— {scrub(f['evidence'])}{p['z']}")
         if f["status"] in ("warn", "fail") and f["fix"]:
-            print(f"      {p['y']}fix:{p['z']} {f['fix']}")
+            print(f"      {p['y']}fix:{p['z']} {'same as above' if f['fix'] in shown else f['fix']}")
+            shown.add(f["fix"])
     print(f"deneb watch: {_summary(findings)}")
 
     # Notify (opt-in). An alert that fails to send is kept in state ("unsent") and goes out
