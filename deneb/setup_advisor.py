@@ -18,6 +18,7 @@ wires this into `deneb setup <model>` (the display + the formal no-execution QA 
 """
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field, replace
 
@@ -86,9 +87,12 @@ _GFX_CAVEAT = ("gfx1151 (Strix Halo): needs a recent kernel with the ROCm fixes 
 # Build prerequisites per distro family (curated best-effort). Kept once, rendered by
 # _runtime_steps; an unrecognised distro gets an honest note instead of a guessed command.
 _PKGS = {
-    "apt": {"base": "build-essential cmake git libcurl4-openssl-dev", "rocm": "rocm-hip-sdk"},
-    "dnf": {"base": "gcc-c++ make cmake git libcurl-devel", "rocm": "rocm-hip-devel hipblas-devel rocblas-devel"},
-    "pacman": {"base": "base-devel cmake git curl", "rocm": "rocm-hip-sdk"},
+    "apt": {"base": "build-essential cmake git libcurl4-openssl-dev", "rocm": "rocm-hip-sdk",
+            "vulkan": "libvulkan-dev glslc"},
+    "dnf": {"base": "gcc-c++ make cmake git libcurl-devel", "rocm": "rocm-hip-devel hipblas-devel rocblas-devel",
+            "vulkan": "vulkan-headers vulkan-loader-devel glslc"},
+    "pacman": {"base": "base-devel cmake git curl", "rocm": "rocm-hip-sdk",
+               "vulkan": "vulkan-headers vulkan-icd-loader shaderc"},
 }
 _LLAMA_DIR = "~/llama.cpp"
 _LLAMA_SERVER = f"{_LLAMA_DIR}/build/bin/llama-server"   # where the build step leaves it
@@ -132,6 +136,27 @@ PLAYBOOK = {
         ],
         run_flags="-ngl 999",
         run_warning=_GFX_CAVEAT),
+    # Not a default for any box: only `deneb setup --measured` selects it, when the best measured
+    # TokenMark row for an AMD GPU is a llama.cpp Vulkan build.
+    "vulkan": Playbook(
+        label="Vulkan (AMD, measured pick)",
+        runtime=[
+            RuntimeStep(
+                "Install build prerequisites (Vulkan)",
+                "",
+                "installs the compiler, CMake, the Vulkan headers and the glslc shader compiler. "
+                "On Ubuntu older than 24.04 there is no glslc package: install the LunarG Vulkan "
+                "SDK or Google's shaderc instead.",
+                needs_sudo=True, pkgs="vulkan"),
+            RuntimeStep(
+                "Build llama.cpp (Vulkan)",
+                f"{_CLONE} && cmake -B build -DGGML_VULKAN=ON && "
+                "cmake --build build --config Release -j",
+                "clones and compiles llama.cpp with the Vulkan backend, the build the measured "
+                "TokenMark row used",
+                is_build=True),
+        ],
+        run_flags="-ngl 999"),
     "metal": Playbook(
         label="Metal (Apple)",
         runtime=[
@@ -284,7 +309,26 @@ def _advised_quant(model, profile, quant):
     return low, True
 
 
-def _runtime_steps(pb: "Playbook", family: str = "unknown") -> list:
+# A Grace Hopper box (a GH200 on Lambda): the toolkit packages are a different build from x86's.
+# Only Hopper GPUs on Arm get this; DGX Spark (GB10) and Jetson ship their own CUDA stack and
+# keep their existing steps.
+_ARM_CUDA_WARNING = ("aarch64 (Arm) Grace Hopper box: use a CUDA 12 toolkit built for arm64/sbsa (NVIDIA's "
+                     "cuda-ubuntu2204-sbsa apt repository, or the one Lambda Stack installs), not "
+                     "x86_64 packages. Ubuntu 22.04's own nvidia-cuda-toolkit is CUDA 11.5, too "
+                     "old for Hopper (sm_90). Check `nvcc --version`; if nvcc is not found, run "
+                     "`export PATH=/usr/local/cuda/bin:$PATH` first.")
+
+
+def is_grace_hopper(profile) -> bool:
+    """An Arm (aarch64) box with a Hopper GPU: a GH200. False for GB10 (DGX Spark), Jetson and
+    Graviton boxes, whose CUDA setup is unchanged."""
+    if (getattr(profile, "arch", "") or "").lower() not in ("aarch64", "arm64"):
+        return False
+    return any(re.search(r"gh200|grace.?hopper|\bh[12]00\b", (getattr(g, "name", "") or "").lower())
+               for g in getattr(profile, "gpus", None) or [])
+
+
+def _runtime_steps(pb: "Playbook", family: str = "unknown", grace_hopper: bool = False) -> list:
     """Build the ordered runtime Steps from a Playbook branch, stamping the SET-03 sudo
     warning on any sudo/system-install step and a compile note on any build step. A package
     step is rendered for the distro family; an unrecognised family gets a note, no command."""
@@ -300,9 +344,10 @@ def _runtime_steps(pb: "Playbook", family: str = "unknown") -> list:
                                 "command is guessed. Install a C++ compiler, make, CMake, git "
                                 "and the libcurl development headers"
                                 + (" and the ROCm/HIP SDK" if rs.pkgs == "rocm" else "")
+                                + (" and the Vulkan headers and glslc" if rs.pkgs == "vulkan" else "")
                                 + " with your package manager, then continue.")))
                 continue
-            pkgs = fam["base"] + (f" {fam['rocm']}" if rs.pkgs == "rocm" else "")
+            pkgs = fam["base"] + (f" {fam[rs.pkgs]}" if rs.pkgs in ("rocm", "vulkan") else "")
             command = platform_guide.install_command(_FAMILY_BY_PM[family], pkgs)
         if rs.pkgs == "rocm" and family == "apt":
             what += (" On Debian/Ubuntu rocm-hip-sdk comes from AMD's own apt repository, "
@@ -313,6 +358,8 @@ def _runtime_steps(pb: "Playbook", family: str = "unknown") -> list:
             warnings.append(_SUDO_WARNING)
         if rs.is_build:
             warnings.append(_BUILD_WARNING)
+            if pb.label.startswith("CUDA") and grace_hopper:
+                warnings.append(_ARM_CUDA_WARNING)
         steps.append(Step(title=rs.title, command=command, what=_plain(what),
                           warnings=[_plain(w) for w in warnings], kind=kind))
     return steps
@@ -534,7 +581,8 @@ def one_way_to_start(steps: list) -> list:
 
 # ── the public entry point (SET-01, SET-02, SET-03; PURE, never raises) ────────
 def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=None,
-                models_dir: str = "~/models", serving=None, ollama_free=None) -> list:
+                models_dir: str = "~/models", serving=None, ollama_free=None,
+                measured=None) -> list:
     """The ORDERED tell-only setup advice for `model` on `profile`: runtime(s) -> download ->
     run, platform-branched from the PLAYBOOK, every sudo/download/service step warned inline.
 
@@ -549,13 +597,22 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
     when it is below the download size a note saying so comes first. `serving` is
     check.serving_now()'s (port, kind, model) or None: an Ollama serving gets its own step
     before the llama.cpp ones. `ollama_free` is (free GiB, path) where that Ollama keeps
-    models, read by the caller: its step warns when the pull would not fit there."""
+    models, read by the caller: its step warns when the pull would not fit there.
+    `measured` is a `deneb setup --measured` pick (measured.Choice): its .quant, .playbook (the
+    llama.cpp build the row used) and .flags (extra llama-server flags) replace the defaults.
+    None keeps the catalog default, byte for byte."""
     try:
         backend = (getattr(profile, "primary_backend", "") or "").strip().lower()
         degraded = backend not in PLAYBOOK
         if degraded:
             backend = "cpu"
+        if measured is not None:
+            quant = measured.quant
+            if measured.playbook in PLAYBOOK and not degraded:
+                backend = measured.playbook
         pb = PLAYBOOK[backend]
+        if measured is not None and measured.flags:
+            pb = replace(pb, run_flags=f"{pb.run_flags} {measured.flags}".strip())
 
         steps: list = []
         if degraded:
@@ -591,7 +648,7 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
                                       vision=vision, store=ollama_free))
 
         # (1) RUNTIME — stand up llama.cpp for this accelerator.
-        steps += _runtime_steps(pb, family)
+        steps += _runtime_steps(pb, family, is_grace_hopper(profile))
         steps.append(Step(
             title="Install the Hugging Face CLI (hf)", command=_HF_INSTALL, kind="runtime",
             what=_plain("installs the `hf` command the download step uses, with pipx (the same "

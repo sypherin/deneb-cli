@@ -203,7 +203,8 @@ def _fetch(url: str, timeout: int = 25, waits=_RETRY_WAITS, sleep=time.sleep) ->
         req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept-Language": "en-SG,en;q=0.9"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode("utf-8", "replace")
+                from .net import read_capped
+                return read_capped(r).decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             if e.code not in _RETRY_STATUS or attempt == len(waits):
                 raise

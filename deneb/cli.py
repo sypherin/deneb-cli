@@ -296,7 +296,9 @@ def _tokenmark_hw_hint(p):
     blob = " ".join(parts).lower()
     if any(k in blob for k in ("strix", "ryzen ai max", "gfx1151", "8060s", "395")):
         return "Strix Halo"
-    if any(k in blob for k in ("dgx", "gb10", "grace")) or "spark" in blob:
+    # GB10 is the Spark's chip. "grace" alone is not a Spark: a GH200 (Grace + Hopper) and any
+    # Neoverse-V2 box named for its CPU must not match DGX Spark rows.
+    if any(k in blob for k in ("dgx", "gb10")) or "spark" in blob:
         return "DGX Spark"
     if "5090" in blob:
         return "RTX 5090"
@@ -312,7 +314,7 @@ def cmd_recommend(argv=None) -> int:
     catalog for the use-case, and print a table + a next-step pointer. Local, deterministic,
     KEYLESS, engine-free: no auth, no LLM, no engine round-trip. It EXECUTES NOTHING (the
     Deneb Rule) — the 'next: deneb setup <pick>' line is a printed pointer, not an invocation."""
-    from . import check, hardware, hf_catalog, setup_advisor, speed, recommend as rec  # local, no engine round-trip
+    from . import check, setup_advisor, speed, api  # api gathers the data; these only format it (no engine round-trip)
     argv = list(argv or [])
     use_case = (_flag(argv, "--use") or "general").strip().lower()
     if use_case not in _RECOMMEND_USE_CASES:
@@ -320,11 +322,9 @@ def cmd_recommend(argv=None) -> int:
                  f"{', '.join(_RECOMMEND_USE_CASES)}")
         return 2
 
-    p = hardware.profile_hardware()
-    models, source = hf_catalog.ranking_catalog()
-    bw = speed.usable_bandwidth(p, speed.device_for_profile(p))
-    recs = rec.recommend(p, use_case, catalog=models, bw_gbps=bw)
-    _family, free_gb = _setup_inputs()          # free disk where setup downloads to
+    want_measured = "--measured" in argv or "--tokenmark" in argv
+    data = api.recommend(use_case, measured=want_measured)
+    p, source, bw, recs, free_gb = (data.profile, data.source, data.bw_gbps, data.recs, data.free_gb)
 
     ui.banner()
     budget = f"~{round(p.usable_mem_mb / 1024)} GB" if p.usable_mem_mb is not None else "unknown"
@@ -372,20 +372,21 @@ def cmd_recommend(argv=None) -> int:
 
     # Opt-in real numbers from TokenMark (community-measured tok/s). Default stays
     # KEYLESS/offline (the Deneb Rule); --measured adds one network call, fail-soft.
-    if "--measured" in argv or "--tokenmark" in argv:
-        from . import tokenmark
-        hw_hint = _tokenmark_hw_hint(p)
-        any_measured = False
+    if want_measured:
+        hw_hint = data.hw_hint
+        any_measured = bool(data.measured)
         lines = []
         for r in recs:
             name = getattr(r.model, "name", "") or ""
-            rows = tokenmark.measured_for_model(name, hardware=hw_hint)
-            if rows:
-                any_measured = True
-                b = rows[0]
-                hw = b.get("hardwareLabel") or b.get("hardware") or "?"
-                lines.append(f"    {name}: {_C['g']}{b.get('decode_tps')} tok/s{_C['z']} "
-                             f"{_C['d']}({b.get('quant') or '?'}, {hw}, src {b.get('author') or '?'}){_C['z']}")
+            b = data.measured.get(name)
+            if b:
+                # every field below came off the network: clean it before it reaches the terminal
+                from .measured import _s as _clean, _tps as _tpsv, _fmt as _fmtv
+                hw = _clean(b.get("hardwareLabel") or b.get("hardware")) or "?"
+                tps = _fmtv(_tpsv(b)) if _tpsv(b) else "?"
+                lines.append(f"    {name}: {_C['g']}{tps} tok/s{_C['z']} "
+                             f"{_C['d']}({_clean(b.get('quant'), 40) or '?'}, {hw}, "
+                             f"src {_clean(b.get('author'), 60) or '?'}){_C['z']}")
         if any_measured:
             print(f"\n  {_C['b']}measured on TokenMark{_C['z']} {_C['d']}"
                   f"(real community benchmarks{f', {hw_hint}' if hw_hint else ''}):{_C['z']}")
@@ -481,35 +482,27 @@ def cmd_setup(argv=None) -> int:
     NOTHING — the Deneb Rule: Deneb shows every command and the user runs them. An unknown
     model name yields a helpful `deneb recommend` pointer + exit 2 (never a crash); a degraded
     platform still prints best-effort generic steps with a caveat (from setup_advisor)."""
-    from . import check, hardware, setup_advisor  # deterministic, local — no engine round-trip
     argv = list(argv or [])
+    use_measured = "--measured" in argv
     # the model name is the non-flag positional args after "setup", joined verbatim.
     name = " ".join(a for a in argv if not a.startswith("-")).strip()
     if not name:
-        ui.error("usage: deneb setup <model>   (e.g. deneb setup Qwen3.6-35B-A3B)\n"
+        ui.error("usage: deneb setup <model> [--measured]   (e.g. deneb setup Qwen3.6-35B-A3B)\n"
                  "       not sure which model? rank this box first:  deneb recommend --use coding")
         return 2
 
-    from . import hf_catalog
-    known = hf_catalog.all_models()
-    model = setup_advisor.resolve_model(name, known)
-    if model is None:
+    from . import api, hf_catalog  # api builds the steps (reads the box, runs nothing); hf_catalog only for the did-you-mean
+    data = api.setup(name, measured=use_measured)
+    if data is None:
         import difflib
-        names = [getattr(m, "name", "") for m in known]
+        names = [getattr(m, "name", "") for m in hf_catalog.all_models()]
         close = difflib.get_close_matches(name, names, n=1, cutoff=0.4)
         hint = f" did you mean '{close[0]}'?" if close else ""
         ui.error(f"unknown model '{name}'.{hint}\n"
                  f"       deneb advises on its curated catalog only. see what fits this box "
                  f"+ the exact names:  deneb recommend --use coding")
         return 2
-
-    p = hardware.profile_hardware()                 # read-only probe (diagnosis, allowed)
-    family, free_gb = _setup_inputs()
-    serving = check.serving_now()                   # read-only GETs: an Ollama here gets its own route
-    store = _ollama_store_free() if serving and serving[1] == "ollama" else None
-    steps = setup_advisor.one_way_to_start(      # PURE: runs nothing; ONE way to start the server
-        setup_advisor.setup_steps(model, p, family=family, free_gb=free_gb, serving=serving,
-                                  ollama_free=store))
+    model, p, serving, steps, sel = (data.model, data.profile, data.serving, data.steps, data.selection)
 
     mname = getattr(model, "name", name)
     ui.banner()
@@ -517,6 +510,10 @@ def cmd_setup(argv=None) -> int:
           f"{_C['d']}on this box (backend {p.primary_backend} · {_serving_label(serving)})…{_C['z']}\n")
     print(f"  {_C['amber']}Deneb shows every command and runs NOTHING (the Deneb Rule). "
           f"You run each yourself.{_C['z']}\n")
+    if sel:
+        for ln in sel.lines:
+            print(f"  {_C['d']}{ln}{_C['z']}")
+        print()
 
     for i, s in enumerate(steps, 1):
         print(f"  {_C['teal']}{_C['b']}{i}. {s.title}{_C['z']}")
@@ -909,6 +906,8 @@ _SUB_HELP = ("check", "profile", "recommend", "setup", "catalog", "guide", "stac
 _SUB_HELP_EXTRA = {
     "recommend": "  deneb recommend --measured    add measured community speeds (reads TokenMark "
                  "over the network)",
+    "setup": "  deneb setup <model> --measured   build the steps from TokenMark's best measured "
+             "config for this box (reads TokenMark over the network)",
 }
 
 

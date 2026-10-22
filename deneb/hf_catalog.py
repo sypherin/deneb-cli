@@ -134,10 +134,23 @@ def _safe_tag(tag) -> str:
     return tag if isinstance(tag, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", tag) else ""
 
 
+_REPO_RE = re.compile(r"[A-Za-z0-9._-]{1,96}/[A-Za-z0-9._-]{1,96}")
+_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()+/-]{0,79}")
+_QNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+
+
+def _checked(value, pattern) -> str:
+    """The value if it is a string that fully matches the allowlist, else raise. setup pastes
+    repo, name and quant names into shell commands and the cache they come from is plain JSON."""
+    if not isinstance(value, str) or not pattern.fullmatch(value) or ".." in value:
+        raise ValueError("unsafe catalog field")
+    return value
+
+
 def entry_to_model(e: dict) -> Optional[Model]:
     """Catalog dict -> the Model dataclass fit()/recommend() already consume."""
     try:
-        quants = [Quant(name=q["name"], size_mb=int(q["size_mb"]), bpw=float(q["bpw"]),
+        quants = [Quant(name=_checked(q["name"], _QNAME_RE), size_mb=int(q["size_mb"]), bpw=float(q["bpw"]),
                         parts=int(q.get("parts") or 0), tag=_safe_tag(q.get("tag")))
                   for q in e["quants"]]
         notes = e.get("notes") or ""
@@ -147,9 +160,9 @@ def entry_to_model(e: dict) -> Optional[Model]:
         # a model tagged only coding (and general) is a Coder model: recommend puts it first
         # for coding
         built_for = "coding" if "coding" in caps and set(caps) <= {"coding", "general"} else ""
-        return Model(e["name"], float(e["params_b"]), e.get("architecture") or "dense",
+        return Model(_checked(e["name"], _NAME_RE), float(e["params_b"]), e.get("architecture") or "dense",
                      e.get("active_params_b"), caps,
-                     quants, e["gguf_repo"], notes=notes, built_for=built_for)
+                     quants, _checked(e["gguf_repo"], _REPO_RE), notes=notes, built_for=built_for)
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -158,7 +171,8 @@ def entry_to_model(e: dict) -> Optional[Model]:
 def _get(url: str, timeout: int = 30):
     req = urllib.request.Request(url, headers={"User-Agent": "deneb-cli (+https://altronis.sg/deneb)"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+        from .net import read_capped
+        return json.loads(read_capped(r).decode("utf-8", "replace"))
 
 
 def load_watchlist(path: str = WATCHLIST_PATH) -> list:

@@ -58,10 +58,11 @@ _UNIFIED_HEADROOM_FRACTION = 0.15
 # the same protection. Matched on name substrings because these report as ordinary GPUs.
 _UNIFIED_NVIDIA_MARKERS = (
     "gb10",     # DGX Spark (GB10 Blackwell)
-    "gb200",    # Grace-Blackwell superchip
-    "gh200",    # Grace-Hopper superchip
+    # NOT gh200 / gb200: those superchips carry their own HBM (96 GB on the GH200 Lambda rents)
+    # and nvidia-smi reports it, so that is the dedicated-VRAM budget. Treating the 480 GB of
+    # LPDDR5X as the pool would "fit" models that then run over NVLink-C2C at a fraction of speed.
     "spark",    # DGX Spark, when reported by product name
-    "grace",    # Grace-based unified parts generally
+    "grace",    # a Grace-named unified part (the GH200 / GB200 names carry no "grace")
     "thor",     # Jetson Thor
     "orin",     # Jetson Orin (unified LPDDR)
 )
@@ -275,11 +276,26 @@ def parse_sysctl_memsize(text: str) -> int:
         return 0
 
 
+# Neoverse-V2 is also AWS Graviton4 and Google Axion, so the part alone never says "NVIDIA Grace":
+# grace_cpu_name() adds that only when a GH/GB-class NVIDIA GPU sits beside it.
+_ARM_PARTS = {"0xd4f": "Arm Neoverse-V2"}
+
+
+def grace_cpu_name(cpu_model: str, gpus) -> str:
+    """'Arm Neoverse-V2' becomes '... (NVIDIA Grace)' when a GH200/GB200-class GPU is present."""
+    if cpu_model == "Arm Neoverse-V2" and any(
+            re.search(r"gh200|gb200|grace", (getattr(g, "name", "") or "").lower()) for g in gpus or []):
+        return cpu_model + " (NVIDIA Grace)"
+    return cpu_model
+
+
 # ── parse_cpuinfo ────────────────────────────────────────────────────────────
 def parse_cpuinfo(text: str) -> dict:
     """/proc/cpuinfo -> {model, cores}. cores = count of 'processor' lines (the
-    logical/nproc count, NOT 'cpu cores'); model = first 'model name'. {'','0'} on junk."""
-    model, cores = "", 0
+    logical/nproc count, NOT 'cpu cores'); model = first 'model name'. {'','0'} on junk.
+    An aarch64 kernel prints no 'model name': the Grace CPU on a GH200 is named from its
+    'CPU part' (0xd4f = Arm Neoverse-V2); any other Arm part stays unnamed, never guessed."""
+    model, cores, part = "", 0, ""
     try:
         for line in (text or "").splitlines():
             if re.match(r"\s*processor\s*:", line):
@@ -288,9 +304,12 @@ def parse_cpuinfo(text: str) -> dict:
                 m = re.match(r"\s*model name\s*:\s*(.+)", line)
                 if m:
                     model = m.group(1).strip()
+                elif not part:
+                    p = re.match(r"\s*CPU part\s*:\s*(0x[0-9a-fA-F]+)", line)
+                    part = p.group(1).lower() if p else ""
     except Exception:  # noqa: BLE001
         return {"model": "", "cores": 0}
-    return {"model": model, "cores": cores}
+    return {"model": model or _ARM_PARTS.get(part, ""), "cores": cores}
 
 
 # ── parse_meminfo ────────────────────────────────────────────────────────────
@@ -601,7 +620,7 @@ def profile_hardware() -> HardwareProfile:
 
     return HardwareProfile(
         os=system, arch=arch, kernel=kernel,
-        cpu_model=cpu_model, cpu_cores=cpu_cores,
+        cpu_model=grace_cpu_name(cpu_model, gpus), cpu_cores=cpu_cores,
         ram_total_mb=ram_total_mb, disk_free_mb=disk_free_mb,
         gpus=gpus, primary_backend=primary_backend,
         usable_mem_mb=usable_mem_mb, notes=notes,

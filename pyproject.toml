@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deneb-cli"
-version = "0.4.1"
+version = "0.4.2"
 description = "Check, set up and watch a local LLM server (llama.cpp, vLLM, Ollama, LM Studio) on your own AI box: Strix Halo, DGX Spark, any GPU"
 readme = "README.md"
 requires-python = ">=3.9"

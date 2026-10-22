@@ -129,7 +129,7 @@ def test_fetch_percent_encodes_non_ascii(monkeypatch):
     class R:
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return b"ok"
+        def read(self, n=-1): return b"ok"
 
     def fake_open(req, timeout=25):
         seen["url"] = req.full_url

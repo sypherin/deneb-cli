@@ -193,6 +193,32 @@
    ]
   },
   {
+   "id": "gh200",
+   "name": "NVIDIA GH200 Grace Hopper (96 GB HBM3)",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90 + Grace Arm64 (aarch64)",
+   "mem_gb": 96,
+   "mem_type": "HBM3",
+   "bw_gbps": 4000,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "llama.cpp",
+    "vllm",
+    "sglang",
+    "tensorrt-llm",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/grace-hopper-superchip/",
+   "confidence": "medium",
+   "match": [
+    "gh200"
+   ],
+   "exclude": [],
+   "notes": "nvidia-smi names it 'NVIDIA GH200 480GB' and lists the 96 GB of HBM3, which is the budget for full speed. The 480 GB of LPDDR5X on the Grace side is reachable over NVLink-C2C but far slower. Lambda rents it as gpu_1x_gh200 (aarch64, Ubuntu 22.04). NVIDIA lists up to 4 TB/s for the 96 GB part; a 144 GB HBM3e variant also exists with more bandwidth and is not what that name reports."
+  },
+  {
    "id": "h200",
    "name": "NVIDIA H200",
    "vendor": "nvidia",
@@ -214,7 +240,8 @@
     "h200"
    ],
    "exclude": [
-    "nvl"
+    "nvl",
+    "gh200"
    ]
   },
   {

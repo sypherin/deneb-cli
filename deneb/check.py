@@ -17,7 +17,7 @@ import re
 import shlex
 import shutil
 
-from . import net, tools, ui
+from . import config, net, tools, ui
 from .colour import Palette
 
 _C = Palette(g="green", r="red", y="amber", d="dim", z="reset", b="bold", teal="teal")
@@ -910,6 +910,107 @@ _IDS = {"_chk_endpoint": "endpoint", "_chk_service": "service", "_chk_gpu": "gpu
 _OPTIONAL = ("gateway", "tunnel")
 
 
+SPEED_WARN_RATIO = 0.7      # below this share of the measured speed the row warns
+_PROBE_PROMPT = "Count from 1 to 40 in words, separated by commas."
+_PROBE_TOKENS = 64
+
+
+def _decode_probe(port: int):
+    """(tok/s, "") from one short greedy completion on the serving port, or (None, why). Uses
+    the server's own decode timing when it reports one (llama.cpp does), else completion tokens
+    over wall time, which includes the prompt, so it reads a little low."""
+    import time
+    # One warm-up first: a model still loading (or not yet paged in) answers its first request
+    # slowly, which would read as a false "under 70%". Only the second request is timed.
+    wstatus, wbody = net.local_post_json(
+        port, "/v1/chat/completions",
+        {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8,
+         "temperature": 0, "stream": False}, timeout=120)
+    if wstatus is None:
+        return None, f"no answer ({str(wbody)[:60]})"
+    t0 = time.monotonic()
+    status, body = net.local_post_json(
+        port, "/v1/chat/completions",
+        {"messages": [{"role": "user", "content": _PROBE_PROMPT}], "max_tokens": _PROBE_TOKENS,
+         "temperature": 0, "stream": False}, timeout=60)
+    dt = time.monotonic() - t0
+    if status is None:
+        return None, f"no answer ({str(body)[:60]})"
+    if status != 200:
+        return None, f"the server answered HTTP {status}"
+    per = (body.get("timings") or {}).get("predicted_per_second")
+    if isinstance(per, (int, float)) and not isinstance(per, bool) and per > 0:
+        return float(per), ""
+    n = (body.get("usage") or {}).get("completion_tokens")
+    if isinstance(n, int) and not isinstance(n, bool) and n >= 16 and dt > 0:
+        return n / dt, ""
+    return None, "the answer was too short to time"
+
+
+_QUANT_IN_NAME = re.compile(r"(?:UD-)?(?:I?Q\d(?:_[A-Z0-9]+)+|Q8_0|BF16|F16|F32)", re.I)
+
+
+def _record_mismatch(exp: dict, served: str) -> str:
+    """'<what the record is for>' when the record's hardware or quant differs from this box or
+    the quant visible in the served model's name; "" when they match or cannot be told."""
+    hw = exp.get("hardware")
+    if isinstance(hw, str) and hw:
+        try:
+            from . import hardware, measured
+            ids = measured.hardware_candidates(hardware.profile_hardware())
+        except Exception:  # noqa: BLE001 - an unreadable box is "cannot tell", not a mismatch
+            ids = []
+        if ids and hw not in ids:
+            return f"{exp.get('hardware_label') or hw}, this box is {ids[-1]}"
+    q = exp.get("quant")
+    seen = _QUANT_IN_NAME.findall(served or "")
+    if isinstance(q, str) and q and seen and not any(q.lower() in x.lower() or x.lower() in q.lower()
+                                                     for x in seen):
+        return f"{q}, this server serves {seen[0]}"
+    return ""
+
+
+def _speed_row():
+    """The decode-speed row for `deneb check`: a quick live probe against the speed that
+    `deneb setup --measured` recorded. None when nothing was recorded or nothing is serving
+    (the endpoint row already says that). Kept out of scan(): it asks the model for tokens, so
+    `deneb watch` must not run it every tick."""
+    label = "Decode speed vs TokenMark"
+    path = config.expected_path()
+    if not os.path.exists(path):
+        return None
+    exp = config.load_expected()
+    if exp is None:
+        return (label, None, f"{path} is not a usable record (no positive tok_s)",
+                "delete it, or re-run `deneb setup <model> --measured` and run its record step")
+    now = serving_now()
+    if not now:
+        return None
+    port, _kind, served = now
+    from . import setup_advisor
+    want = setup_advisor._norm_key(exp.get("model") or "")
+    have = setup_advisor._norm_key(served or "")
+    if want and have and want not in have and have not in want:
+        return (label, None, f"not compared: the record is for {exp.get('model')}, this server "
+                f"serves {served}", "")
+    # a record for other hardware or another quant is not a yardstick for this box
+    mism = _record_mismatch(exp, served)
+    if mism:
+        return (label, None, f"expected is for {mism}, not comparable", "")
+    tps, why = _decode_probe(port)
+    shown = f"{exp['tok_s']:.1f}".rstrip("0").rstrip(".")
+    if tps is None:
+        return (label, UNKNOWN, f"measured {shown} tok/s on TokenMark; could not time this box: {why}",
+                "re-run `deneb check` when the server is idle")
+    mine = f"{tps:.1f}".rstrip("0").rstrip(".")
+    ev = f"measured {shown} tok/s on TokenMark, this box now {mine} tok/s"
+    if tps >= exp["tok_s"] * SPEED_WARN_RATIO:
+        return (label, True, f"{ev}, ok", "")
+    return (label, True, f"{ev} ⚠ (under {int(SPEED_WARN_RATIO * 100)}% of the measured speed)",
+            "another job may be using the GPU, the model may be partly on CPU, or the settings "
+            "differ from the measured row; compare with the setup steps and `deneb profile`")
+
+
 def scan() -> list:
     """Run every check and return the rows WITHOUT printing: (id, label, ok, evidence, fix).
     ok is True, False, None (doesn't apply: shown as "–", never a failure) or UNKNOWN "?" (could
@@ -930,6 +1031,9 @@ def run() -> int:
     ui.banner()
     print(f"{_C['d']}running a read-only scan of this box…{_C['z']}")
     rows = [r[1:] for r in scan()]
+    speed_row = _speed_row()
+    if speed_row:
+        rows.append(speed_row)
     print()
     shown = set()                           # one fault often fails two rows with the same fix
     for label, ok, ev, fix in rows:

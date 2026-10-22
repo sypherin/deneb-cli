@@ -150,6 +150,7 @@ deneb recommend --use coding             # rank current models for this box, wit
 deneb recommend --use coding --measured  # add measured community speeds from TokenMark
 deneb catalog [--refresh]                # the models Deneb ranks, with real per-quant sizes
 deneb setup Qwen3.6-35B-A3B              # the setup steps for a model on this box
+deneb setup Qwen3.6-35B-A3B --measured   # same, built from TokenMark's best measured config for this box
 deneb guide strix-halo                   # pre-flight runbook for the box (or dgx-spark)
 deneb stack                              # several models behind one authed endpoint
 deneb selfupdate [--remote user@host]    # how to update Deneb, here or on another box
@@ -173,6 +174,12 @@ When Ollama is already serving, the first step is a route through it instead: an
 `ollama pull` of a quant that is one file, or why Ollama can't take the model (it can't
 pull a GGUF split into several files yet).
 
+With `--measured`, setup reads TokenMark and builds the steps from the fastest measured
+llama.cpp config your box can run (quant, context, MTP flags), and says the speed, the source
+link and where and when it was measured. If TokenMark has no row for your box and model, or
+can't be reached, it says so in one line and uses the default. `deneb check` then compares a
+short live decode against that speed.
+
 ---
 
 ## What it writes, and what it sends
@@ -181,7 +188,7 @@ pull a GGUF split into several files yet).
   `~/.local/state/deneb`, the model list `catalog --refresh` saves in `~/.cache/deneb`, and
   in `~/.config/deneb` (mode 600) your saved token, your `deneb brain` choice (the name of an
   API-key variable, never the key) and, while one is pending, `request.json` for a token request.
-- **Sends:** nothing, unless you ask. `recommend --measured` reads TokenMark,
+- **Sends:** nothing, unless you ask. `recommend --measured` and `setup --measured` read TokenMark,
   `catalog --refresh` reads Hugging Face, and watch posts an alert to the URL you set.
   `deneb auth --request` sends your name, email, box and reason to Altronis. The conversational
   mode sends your question and the log lines it reads to the model you chose: nothing to

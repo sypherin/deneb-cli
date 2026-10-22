@@ -35,7 +35,8 @@ def _get(path: str) -> Optional[dict]:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
             if r.status != 200:
                 return None
-            return json.loads(r.read().decode("utf-8"))
+            from .net import read_capped
+            return json.loads(read_capped(r).decode("utf-8"))
     except Exception:
         return None
 
@@ -87,3 +88,14 @@ def measured_for_model(model_name: str, hardware: Optional[str] = None, limit: i
         rows = [c for c in rows if h in f"{c.get('hardware','')} {c.get('hardwareLabel','')}".lower()]
     rows.sort(key=lambda c: c.get("decode_tps") or 0, reverse=True)
     return rows[:limit] or None
+
+
+def tracker_rows() -> Optional[tuple]:
+    """(configs, tracked hardware ids) from TokenMark's full tracker summary, or None when the
+    site is unreachable or the answer has no configs. One GET, the same file
+    measured_for_model reads. `deneb setup --measured` picks from these rows."""
+    data = _get("/tracker-summary.json")
+    if not isinstance(data, dict) or not isinstance(data.get("configs"), list) or not data["configs"]:
+        return None
+    rows = [c for c in data["configs"] if isinstance(c, dict)]
+    return rows, sorted({c.get("hardware") for c in rows if isinstance(c.get("hardware"), str)})

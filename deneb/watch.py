@@ -567,13 +567,17 @@ def send_notify(url: str, text: str):
     """POST the alert. Returns None on success, else a short error that is safe to print and
     store: the exception CLASS and the host, or the HTTP status. Never str(e), never the URL."""
     try:
-        if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        pu = urllib.parse.urlparse(url)
+        if pu.scheme not in ("http", "https"):
             return "notify URL must start with http:// or https://"
+        from .net import is_private_host
+        if pu.scheme == "http" and not is_private_host(pu.hostname or ""):
+            return "notify URL must be https:// (plain http only for a host on your own network)"
         body, ctype = build_payload(url, text)
         req = urllib.request.Request(url, data=body, method="POST", headers={
             "Content-Type": ctype, "User-Agent": f"deneb-cli/{__version__}"})
         with urllib.request.urlopen(req, timeout=10) as resp:
-            resp.read()
+            resp.read(65536)
         return None
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code} from {_safe_host(url)}"
