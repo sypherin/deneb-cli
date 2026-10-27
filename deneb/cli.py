@@ -454,6 +454,15 @@ def _setup_inputs():
     return family, free_gb
 
 
+def _has_systemd() -> bool:
+    """False on a Linux box not started with systemd (a RunPod or Vast container, WSL without
+    systemd), where `systemctl --user` cannot keep a server running; True elsewhere (macOS gets
+    no service step anyway)."""
+    import os
+    import sys
+    return not sys.platform.startswith("linux") or os.path.isdir("/run/systemd/system")
+
+
 def _ollama_store_free():
     """(free GiB or None, path) where an Ollama on this box keeps models: OLLAMA_MODELS when
     set here, else the Linux service's /usr/share/ollama/.ollama/models when that install
@@ -472,6 +481,27 @@ def _ollama_store_free():
         return int(shutil.disk_usage(path).free // (1024 ** 3)), where
     except OSError:
         return None, where
+
+
+def _datacenter_hint(model, p) -> str:
+    """On a datacenter GPU (H100, A100, A10...), point at `--measured`: the default steps are
+    llama.cpp, and TokenMark's runs on some of these cards are vLLM ones deneb can set up. Reads
+    the hardware catalog only, never the network, so it claims no run on this particular card.
+    "" anywhere else."""
+    try:
+        from . import vllm_setup
+        if vllm_setup.device_class(p) != "datacenter-gpu":
+            return ""
+        name = getattr(model, "name", "") or "<model>"
+        cuda = (getattr(p, "primary_backend", "") or "").strip().lower() == "cuda"
+        if cuda and any(vllm_setup.weights_for(model, q) for (_k, q) in vllm_setup.WEIGHTS):
+            return (f"this is a datacenter GPU: `deneb setup {name} --measured` looks up TokenMark's "
+                    "runs on this card, vLLM ones included, and sets up the fastest one it can run. "
+                    "With no run on this card it falls back to the steps below.")
+        return (f"this is a datacenter GPU: `deneb setup {name} --measured` sets up the fastest "
+                "run TokenMark measured on this card, when it has one deneb can set up.")
+    except Exception:  # noqa: BLE001 - a hint never breaks setup
+        return ""
 
 
 def cmd_setup(argv=None) -> int:
@@ -514,6 +544,10 @@ def cmd_setup(argv=None) -> int:
         for ln in sel.lines:
             print(f"  {_C['d']}{ln}{_C['z']}")
         print()
+    elif not use_measured:
+        hint = _datacenter_hint(model, p)
+        if hint:
+            print(f"  {_C['amber']}{hint}{_C['z']}\n")
 
     for i, s in enumerate(steps, 1):
         print(f"  {_C['teal']}{_C['b']}{i}. {s.title}{_C['z']}")
@@ -866,7 +900,7 @@ def cmd_watch(argv=None) -> int:
     return watch.main(argv)
 
 
-_HELP = """Deneb: check, set up and watch a local LLM server on your own AI box.
+_HELP = """Deneb: check, set up and watch an LLM server on your own AI box or a cloud GPU.
 
 free, no token, nothing sent unless you ask (alerts, --refresh, --measured).
 They read the box and print the fix, and run none of it:
@@ -907,7 +941,8 @@ _SUB_HELP_EXTRA = {
     "recommend": "  deneb recommend --measured    add measured community speeds (reads TokenMark "
                  "over the network)",
     "setup": "  deneb setup <model> --measured   build the steps from TokenMark's best measured "
-             "config for this box (reads TokenMark over the network)",
+             "config for this box: llama.cpp, or vLLM on an H100, A100 40GB or A10 cloud GPU "
+             "(reads TokenMark over the network)",
 }
 
 

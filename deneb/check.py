@@ -135,8 +135,10 @@ def _ollama_install() -> str:
 
 
 def _own_llama_unit_exists() -> bool:
-    """True when the llama-server user unit that `deneb setup` writes is on disk."""
-    return os.path.isfile(os.path.expanduser("~/.config/systemd/user/llama-server.service"))
+    """True when a user unit that `deneb setup` writes is on disk: llama-server.service, or
+    vllm-server.service from the vLLM route."""
+    return any(os.path.isfile(os.path.expanduser(f"~/.config/systemd/user/{u}"))
+               for u in ("llama-server.service", "vllm-server.service"))
 
 
 # Unit files a person wrote (not the ones a package ships), and the programs that make one a
@@ -145,25 +147,67 @@ _WRITTEN_UNIT_DIRS = (("~/.config/systemd/user", "user"), ("/etc/systemd/system"
 _SERVER_EXEC = re.compile(r"^ExecStart=.*(llama-server|llama_cpp\.server|vllm|ollama serve)", re.M)
 
 
+_VLLM_EXEC = re.compile(r"^ExecStart=.*\bvllm(?:\s+serve|\.entrypoints)", re.M)
+
+
+def _enabled(unit_dir: str, name: str) -> bool:
+    """`systemctl enable` left a link to `name` in one of the unit dir's *.wants directories."""
+    try:
+        wants = [w for w in os.listdir(unit_dir) if w.endswith(".wants")]
+    except OSError:
+        return False
+    return any(os.path.lexists(os.path.join(unit_dir, w, name)) for w in wants)
+
+
 def _server_unit_on_disk() -> tuple:
     """(name, scope) of a unit file whose ExecStart runs a model server, ('', '') when none.
     How plain `deneb check` names a stopped server: it has no record of where one was seen
-    (only `deneb watch` keeps one), so it looks for the unit that would start it."""
-    for d, scope in _WRITTEN_UNIT_DIRS:
+    (only `deneb watch` keeps one), so it looks for the unit that would start it. With more than
+    one (a llama.cpp and a vLLM unit, both from deneb setup), the enabled one wins, then the
+    newest: deneb's setup disables the other when it switches engines."""
+    found = []
+    for order, (d, scope) in enumerate(_WRITTEN_UNIT_DIRS):
+        unit_dir = os.path.expanduser(d)
         try:
-            names = sorted(os.listdir(os.path.expanduser(d)))
+            names = sorted(os.listdir(unit_dir))
         except OSError:
             continue
         for n in names:
             if not n.endswith(".service"):
                 continue
+            path = os.path.join(unit_dir, n)
             try:
-                with open(os.path.join(os.path.expanduser(d), n), errors="replace") as f:
-                    if _SERVER_EXEC.search(f.read(65536)):
-                        return n, scope
+                with open(path, errors="replace") as f:
+                    if _SERVER_EXEC.search(_joined(f.read(65536))):
+                        found.append((not _enabled(unit_dir, n), -os.path.getmtime(path), order, n, scope))
             except OSError:
                 continue
-    return "", ""
+    if not found:
+        return "", ""
+    best = min(found)
+    return best[3], best[4]
+
+
+def _joined(text: str) -> str:
+    """Unit text with backslash-continued lines joined, so an ExecStart= split over lines reads
+    as the one command systemd runs."""
+    return re.sub(r"\\\n\s*", " ", text)
+
+
+def _unit_text() -> tuple:
+    """(name, scope, text) of the unit that starts the model server: the one `deneb watch` saw,
+    else one on disk. Text is "" when there is none or it can't be read; continued lines are
+    joined."""
+    name, scope = hinted_unit()
+    if not name:
+        name, scope = _server_unit_on_disk()
+    for d in ([d for d, s in _WRITTEN_UNIT_DIRS if s == scope] if name else []):
+        try:
+            with open(os.path.join(os.path.expanduser(d), name), errors="replace") as f:
+                return name, scope, _joined(f.read(65536))
+        except OSError:
+            continue
+    return name, scope, ""
 
 
 def _stopped_fix() -> str:
@@ -399,12 +443,16 @@ def _endpoint_state(port: int):
     if not ok:
         health = _curl(port, "/health")
         ok = _health_ok(health)
-    model = ""
-    if ok:
-        m = re.search(r'"id"\s*:\s*"([^"]+)"', mv)
-        if m:
-            model = m.group(1).split("/")[-1]
+    model = _model_id(mv).split("/")[-1] if ok else ""
     return ok, model, mv, health
+
+
+def _model_id(mv: str) -> str:
+    """The first model id in a /v1/models body, exactly as served ("" when none): the name a
+    request must send. vLLM serving a repo id (org/name) and Ollama's hf.co/... names answer
+    404 to the short form."""
+    m = re.search(r'"id"\s*:\s*"([^"]+)"', mv or "")
+    return m.group(1) if m else ""
 
 
 def serving_now():
@@ -731,6 +779,8 @@ def _chk_model_file():
     kind = _api_kind(port) if hidden else _server_kind(proc, _serving_cmdline())
     if not pid and (port == 11434 or "ollama" in _hint["unit"].lower()):
         kind = "ollama"      # stopped, but the stored unit or Ollama's own port says what it was
+    elif not pid and _VLLM_EXEC.search(_unit_text()[2]):
+        kind = "vllm"        # stopped, and the unit that starts it runs vLLM
     name = {"ollama": "Ollama", "vllm": "vLLM", "lmstudio": "LM Studio"}.get(kind)
     if name:
         return ("Model file present", None, f"{name} manages its own model files; not checked", "")
@@ -785,20 +835,9 @@ def _chk_model_file():
 def _unit_model_path() -> str:
     """The absolute -m / --model path in the unit file that starts the model server, '' when
     there is none (a unit can't be read, or names its model some other way)."""
-    name, scope = hinted_unit()
-    if not name:
-        name, scope = _server_unit_on_disk()
-    dirs = [d for d, s in _WRITTEN_UNIT_DIRS if s == scope] if name else []
-    for d in dirs:
-        try:
-            with open(os.path.join(os.path.expanduser(d), name), errors="replace") as f:
-                text = f.read(65536)
-        except OSError:
-            continue
-        text = re.sub(r"\\\n\s*", " ", text)   # an ExecStart= continued over lines with a backslash
-        m = re.search(r"""^ExecStart=.*?\s(?:-m|--model)[ =]["']?(/[^\s"']+)""", text, re.M)
-        return m.group(1) if m else ""
-    return ""
+    text = _unit_text()[2]
+    m = re.search(r"""^ExecStart=.*?\s(?:-m|--model)[ =]["']?(/[^\s"']+)""", text, re.M)
+    return m.group(1) if m else ""
 
 
 _NOT_SET_UP = "not set up (optional: only needed to reach the model from other machines)"
@@ -915,24 +954,26 @@ _PROBE_PROMPT = "Count from 1 to 40 in words, separated by commas."
 _PROBE_TOKENS = 64
 
 
-def _decode_probe(port: int):
+def _decode_probe(port: int, model=None):
     """(tok/s, "") from one short greedy completion on the serving port, or (None, why). Uses
     the server's own decode timing when it reports one (llama.cpp does), else completion tokens
-    over wall time, which includes the prompt, so it reads a little low."""
+    over wall time, which includes the prompt, so it reads a little low. `model` is the served
+    name, sent in both requests (vLLM answers only to the name it serves)."""
     import time
+    named = {"model": model} if model else {}
     # One warm-up first: a model still loading (or not yet paged in) answers its first request
     # slowly, which would read as a false "under 70%". Only the second request is timed.
     wstatus, wbody = net.local_post_json(
         port, "/v1/chat/completions",
-        {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8,
+        {**named, "messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8,
          "temperature": 0, "stream": False}, timeout=120)
     if wstatus is None:
         return None, f"no answer ({str(wbody)[:60]})"
     t0 = time.monotonic()
     status, body = net.local_post_json(
         port, "/v1/chat/completions",
-        {"messages": [{"role": "user", "content": _PROBE_PROMPT}], "max_tokens": _PROBE_TOKENS,
-         "temperature": 0, "stream": False}, timeout=60)
+        {**named, "messages": [{"role": "user", "content": _PROBE_PROMPT}],
+         "max_tokens": _PROBE_TOKENS, "temperature": 0, "stream": False}, timeout=60)
     dt = time.monotonic() - t0
     if status is None:
         return None, f"no answer ({str(body)[:60]})"
@@ -997,7 +1038,7 @@ def _speed_row():
     mism = _record_mismatch(exp, served)
     if mism:
         return (label, None, f"expected is for {mism}, not comparable", "")
-    tps, why = _decode_probe(port)
+    tps, why = _decode_probe(port, _model_id(_curl(port, "/v1/models")) or served)
     shown = f"{exp['tok_s']:.1f}".rstrip("0").rstrip(".")
     if tps is None:
         return (label, UNKNOWN, f"measured {shown} tok/s on TokenMark; could not time this box: {why}",

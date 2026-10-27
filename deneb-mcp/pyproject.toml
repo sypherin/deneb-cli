@@ -4,15 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deneb-mcp"
-version = "0.1.0"
-description = "Model Context Protocol server for Deneb: keyless, deterministic model setup advice, in sync with the Deneb engine by construction."
+version = "0.2.0"
+description = "Model Context Protocol server for Deneb: keyless, deterministic model setup advice for your own AI box or a cloud GPU (H100, A100, A10), in sync with the Deneb engine by construction."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+keywords = ["mcp", "model context protocol", "llm", "vllm", "llama.cpp", "cloud gpu", "h100",
+            "a100", "local llm", "model setup"]
 dependencies = [
     "deneb-cli",
     "mcp>=1.26",
 ]
+
+[project.urls]
+Homepage = "https://altronis.sg/deneb/cli"
+Source = "https://github.com/sypherin/deneb-cli/tree/main/deneb-mcp"
+Issues = "https://github.com/sypherin/deneb-cli/issues"
 
 [project.scripts]
 deneb-mcp = "deneb_mcp.server:main"

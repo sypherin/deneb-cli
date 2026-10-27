@@ -257,7 +257,7 @@ def test_similar_names_still_match_their_own_part():
            ("NVIDIA A10G", "NVIDIA A100-SXM4-80GB", "NVIDIA L4", "NVIDIA L40S", "NVIDIA L40", "Tesla T4",
             "NVIDIA T400 4GB", "NVIDIA T4000")}
     assert got == {"NVIDIA A10G": "a10g", "NVIDIA A100-SXM4-80GB": "a100-80gb", "NVIDIA L4": "l4",
-                   "NVIDIA L40S": "l40s", "NVIDIA L40": None, "Tesla T4": "t4",
+                   "NVIDIA L40S": "l40s", "NVIDIA L40": "l40", "Tesla T4": "t4",
                    "NVIDIA T400 4GB": None, "NVIDIA T4000": None}
 
 

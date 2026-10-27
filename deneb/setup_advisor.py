@@ -99,6 +99,7 @@ _LLAMA_SERVER = f"{_LLAMA_DIR}/build/bin/llama-server"   # where the build step 
 _CLONE = f"git clone https://github.com/ggml-org/llama.cpp {_LLAMA_DIR} && cd {_LLAMA_DIR}"
 _HF_INSTALL = "pipx install huggingface_hub"
 _SERVICE_NAME = "llama-server.service"
+_VLLM_UNIT = "vllm-server.service"      # vllm_setup.UNIT (that module imports this one)
 
 # ── THE CURATED PLAYBOOK (SET-02) — one branch per accelerator, templates not per-model ──
 PLAYBOOK = {
@@ -458,14 +459,18 @@ def _service_step(pb: "Playbook", basename: str, labels: tuple, vision: bool) ->
     # one command line: the heredoc body follows it, so a failed guard also skips systemctl.
     # `restart`, not `enable --now`: --now only starts an inactive unit, so re-running this step
     # for a new model would leave the old one serving.
-    command = (f"{pre} && mkdir -p ~/.config/systemd/user && cat > {path} <<EOF && "
+    # deneb's vLLM unit serves on the same port: stop it first, or this server cannot bind
+    command = (f"{pre} && if [ -f ~/.config/systemd/user/{_VLLM_UNIT} ]; then "
+               f"systemctl --user disable --now {_VLLM_UNIT}; fi && "
+               f"mkdir -p ~/.config/systemd/user && cat > {path} <<EOF && "
                f"systemctl --user daemon-reload && systemctl --user enable {_SERVICE_NAME} && "
                f"systemctl --user restart {_SERVICE_NAME}\n"
                f"{unit}EOF")
     return Step(
         title="Keep it running (systemd user service)", command=command, kind="service",
         what=_plain("writes a user service for the server above and starts it, so it restarts "
-                    "after a crash and `deneb check` / `deneb watch` can find and name it."),
+                    "after a crash and `deneb check` / `deneb watch` can find and name it. It "
+                    f"first stops deneb's vLLM unit ({_VLLM_UNIT}) if you have one: both use port 8001."),
         warnings=[_plain(_UNIT_WARNING)])
 
 
@@ -561,19 +566,41 @@ def _ollama_step(port: int, repo: str, quant, one_file, any_one_file: bool, visi
         warnings=warnings, kind="ollama")
 
 
-def one_way_to_start(steps: list) -> list:
+# Container images (RunPod, Vast) start the shell without systemd: `systemctl --user` fails there,
+# so the run step is the way to start the server and this says how to keep it up.
+_NO_SYSTEMD_STEP = Step(
+    title="No systemd here: keep the server running yourself", command="", kind="note",
+    what=_plain("this box was not started with systemd (a container image such as RunPod or Vast, "
+                "or WSL without systemd turned on), "
+                "so a user service can't keep the server running. Start the run step above inside "
+                "tmux (tmux new -s model, then the run command; Ctrl-B then D leaves it running), or "
+                "put nohup in front of it and > ~/model-server.log 2>&1 & at the end. Either way, "
+                "start it again after the box restarts."))
+
+
+def one_way_to_start(steps: list, systemd: bool = True) -> list:
     """The steps as a person should follow them top to bottom: when a user service starts the
     server, the foreground run step is dropped (running both starts the server twice, on the same
-    port) and its warnings move to the service step. Pure; setup_steps keeps both for callers."""
+    port) and its warnings move to the service step. Without systemd (`systemd=False`, a
+    container) the service and linger steps go instead and a note on keeping the run step up
+    follows it. Pure; setup_steps keeps both for callers."""
+    if not systemd:
+        out = [s for s in steps if s.kind not in ("service", "linger")]
+        runs = [i for i, s in enumerate(out) if s.kind == "run"]
+        if runs and len(out) < len(steps):
+            out.insert(runs[0] + 1, _NO_SYSTEMD_STEP)
+        return out
     svc = next((s for s in steps if s.kind == "service"), None)
     run = next((s for s in steps if s.kind == "run"), None)
     if svc is None or run is None:
         return list(steps)
     # the foreground run's "stop it (Ctrl-C)" does not apply to a unit: the unit's own stop line
-    # replaces it (the run step still carries it for callers that show the run step alone)
-    own = [_plain(_SERVICE_WARNING)]
-    merged = [w for w in run.warnings if w not in own] + [w for w in svc.warnings if w not in run.warnings]
-    merged = [w for w in svc.warnings if w == _plain(_UNIT_WARNING)] + [w for w in merged if w != _plain(_UNIT_WARNING)]
+    # (its first warning, llama.cpp or vLLM) replaces it and goes first (the run step still
+    # carries it for callers that show the run step alone)
+    stop = svc.warnings[:1]
+    merged = ([w for w in run.warnings if "Ctrl-C" not in w and w not in stop]
+              + [w for w in svc.warnings[1:] if w not in run.warnings])
+    merged = stop + merged
     new_svc = Step(title="Run the model and keep it running (systemd user service)",
                    command=svc.command, what=svc.what, warnings=merged, kind=svc.kind)
     return [new_svc if s is svc else s for s in steps if s is not run]
@@ -600,8 +627,13 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
     models, read by the caller: its step warns when the pull would not fit there.
     `measured` is a `deneb setup --measured` pick (measured.Choice): its .quant, .playbook (the
     llama.cpp build the row used) and .flags (extra llama-server flags) replace the defaults.
-    None keeps the catalog default, byte for byte."""
+    None keeps the catalog default, byte for byte. A vLLM pick (measured.engine "vllm") gets
+    vllm_setup's steps instead: install vLLM, download its checkpoint, `vllm serve`."""
     try:
+        if measured is not None and getattr(measured, "engine", "llama.cpp") == "vllm":
+            from . import vllm_setup
+            return vllm_setup.steps(model, profile, measured, family=family, free_gb=free_gb,
+                                    serving=serving, models_dir=models_dir)
         backend = (getattr(profile, "primary_backend", "") or "").strip().lower()
         degraded = backend not in PLAYBOOK
         if degraded:
@@ -646,6 +678,17 @@ def setup_steps(model, profile, quant=None, family: str = "unknown", free_gb=Non
         if serving and serving[1] == "ollama":
             steps.append(_ollama_step(serving[0], repo, chosen, *_one_file_quant(model, profile),
                                       vision=vision, store=ollama_free))
+        elif serving and serving[1] == "vllm":
+            # vLLM claims most of the GPU's memory while it runs, on any port
+            same = serving[0] == 8001
+            steps.append(Step(
+                title=f"vLLM is serving on port {serving[0]}", command="", kind="note",
+                what=_plain(f"vLLM is serving on 127.0.0.1:{serving[0]}"
+                            + (", the port llama-server uses here" if same else "")
+                            + ". It holds most of the GPU's memory while it runs, so llama-server "
+                            f"cannot load beside it. When deneb's vLLM unit ({_VLLM_UNIT}) runs it, "
+                            "the service step below stops it; a vLLM started any other way, stop "
+                            "it yourself first.")))
 
         # (1) RUNTIME — stand up llama.cpp for this accelerator.
         steps += _runtime_steps(pb, family, is_grace_hopper(profile))

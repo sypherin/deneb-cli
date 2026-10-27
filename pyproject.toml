@@ -4,12 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deneb-cli"
-version = "0.4.2"
-description = "Check, set up and watch a local LLM server (llama.cpp, vLLM, Ollama, LM Studio) on your own AI box: Strix Halo, DGX Spark, any GPU"
+version = "0.5.0"
+description = "Check, set up and watch an LLM server (llama.cpp, vLLM, Ollama, LM Studio) on your own AI box or a cloud GPU: Strix Halo, DGX Spark, H100, A100, A10, any GPU"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 dependencies = []  # stdlib-only client (urllib/argparse) — trivial install, no deps
+keywords = ["llm", "local llm", "vllm", "llama.cpp", "ollama", "lm studio", "cloud gpu", "h100",
+            "a100", "a10", "strix halo", "dgx spark", "self-hosted ai", "model setup", "tokenmark"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://altronis.sg/deneb/cli"
+Source = "https://github.com/sypherin/deneb-cli"
+Issues = "https://github.com/sypherin/deneb-cli/issues"
 
 [project.scripts]
 deneb = "deneb.cli:main"

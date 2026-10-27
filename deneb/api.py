@@ -69,15 +69,19 @@ def recommend(use_case: str, measured: bool = False, profile=None) -> RecommendR
     meas: dict = {}
     hw_hint = None
     if measured:
-        from . import tokenmark
-        hw_hint = cli._tokenmark_hw_hint(p)
+        from . import measured as measured_mod, tokenmark
+        # TokenMark's own hardware ids for this box (exact: a10 never pulls a100 rows); the
+        # loose name hint is only the fallback for a box the hardware catalog does not know.
+        ids = measured_mod.hardware_candidates(p) or None
+        dev = speed.device_for_profile(p)
+        hw_hint = cli._tokenmark_hw_hint(p) or (str(dev["name"]) if dev and dev.get("name") else None)
         for r in recs:
             name = getattr(r.model, "name", "") or ""
             # measured is a soft add-on: a reachable-but-malformed response, or any error,
             # drops that model's measurement - it never breaks the recommendation. (Mirrors
             # the top-level guard in measured.choose_for_box on the setup path.)
             try:
-                rows = tokenmark.measured_for_model(name, hardware=hw_hint)
+                rows = tokenmark.measured_for_model(name, hardware=hw_hint, hardware_ids=ids)
             except Exception:
                 rows = None
             if rows:
@@ -104,7 +108,8 @@ def setup(model_name: str, measured: bool = False, profile=None) -> Optional[Set
         sel = measured_mod.choose_for_box(model, p)
     steps = setup_advisor.one_way_to_start(
         setup_advisor.setup_steps(model, p, family=family, free_gb=free_gb, serving=serving,
-                                  ollama_free=store, measured=sel.choice if sel else None))
+                                  ollama_free=store, measured=sel.choice if sel else None),
+        systemd=cli._has_systemd())
     if sel and sel.choice:
         steps.append(measured_mod.record_step(sel.expected))
     return SetupResult(model, p, serving, steps, sel)

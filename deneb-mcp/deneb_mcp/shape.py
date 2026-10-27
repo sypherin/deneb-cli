@@ -104,22 +104,34 @@ def setup_payload(data, requested_name: str) -> dict:
             "kind": getattr(s, "kind", "") or None,
         })
     ollama = next((st["n"] for st in steps if st["kind"] == "ollama"), None)
+    sel = data.selection
+    choice = getattr(sel, "choice", None)
+    engine = getattr(choice, "engine", "") or "llama.cpp"
+    unit = any(st["kind"] == "service" for st in steps)   # no systemd: no unit step, run by hand
+    manual = ("llama.cpp steps" if engine != "vllm" else
+              "vLLM steps (served on 127.0.0.1:8001 by the vllm-server.service user unit)" if unit
+              else "vLLM steps (served on 127.0.0.1:8001)")
     out = {
         "model": getattr(data.model, "name", requested_name),
         "box": _box(data.profile, data.serving),
+        "engine": engine,
         "steps": steps,
         "ollama_step": ollama,
         "note": ("Deneb shows every command and runs NOTHING (the Deneb Rule): run each step "
                  "yourself, top to bottom, and verify it before running. When an Ollama step is "
-                 "present it is an alternative route to the manual llama.cpp steps, not an extra one."),
+                 f"present it is an alternative route to the manual {manual}, not an extra one."),
     }
-    sel = data.selection
     if sel is not None:
         out["measured"] = {
             # sel.lines are built from TokenMark rows; clean again before they leave the box
             "lines": [_clean(x, 300) for x in (sel.lines or [])],
-            "reproduces": bool(getattr(sel, "choice", None)),
+            "reproduces": bool(choice),
+            "engine": engine if choice else None,
         }
+        if choice is not None and engine == "vllm":
+            out["measured"]["vllm"] = {"max_model_len": getattr(choice, "ctx", None),
+                                       "max_num_seqs": getattr(choice, "max_seqs", None),
+                                       "gpu_memory_utilization": getattr(choice, "util", None)}
     return out
 
 

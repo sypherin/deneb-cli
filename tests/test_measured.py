@@ -68,9 +68,10 @@ def test_a10_picks_best_llama_cpp_row_and_names_vllm_number():
     sel = measured.select(ROWS, TRACKED, model(), a10_box())
     c = sel.choice
     assert c.playbook == "cuda" and c.quant.name == "UD-Q3_K_XL"
-    # the 41 tok/s row is vllm: named, then the best llama.cpp row used
+    # the 41 tok/s row is vllm with GGUF weights deneb has no vLLM recipe for: named, then the
+    # best llama.cpp row used
     text = "\n".join(sel.lines)
-    assert "41 tok/s" in text and "vllm" in text and "only drives llama.cpp" in text
+    assert "41 tok/s" in text and "vllm" in text and "no vLLM recipe" in text and "UD-Q4_K_XL" in text
     assert sel.expected["hardware"] == "a10"
 
 
@@ -208,7 +209,7 @@ def _write_expected(**kw):
 
 def _serve(monkeypatch, tps, served="qwen3.8-27b"):
     monkeypatch.setattr(check, "serving_now", lambda: (8001, "llama.cpp", served))
-    monkeypatch.setattr(check, "_decode_probe", lambda port: (tps, "") if tps else (None, "no answer"))
+    monkeypatch.setattr(check, "_decode_probe", lambda port, model=None: (tps, "") if tps else (None, "no answer"))
 
 
 def test_speed_row_absent_without_record(monkeypatch):

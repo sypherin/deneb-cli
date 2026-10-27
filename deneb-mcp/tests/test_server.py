@@ -67,6 +67,38 @@ def test_setup_payload_measured_branch():
     assert out["measured"]["lines"] and all(isinstance(x, str) for x in out["measured"]["lines"])
 
 
+def test_setup_payload_names_the_vllm_engine_and_its_settings():
+    import json
+    from pathlib import Path
+    from deneb import hf_catalog, measured, setup_advisor
+    from deneb.api import SetupResult
+    from deneb.hardware import GPUInfo, HardwareProfile
+    fix = json.loads((Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+                      / "tokenmark_card_rows.json").read_text())
+    rows = fix["configs"] + fix["card_configs"]
+    box = HardwareProfile(primary_backend="cuda", usable_mem_mb=81559, arch="x86_64",
+                          gpus=[GPUInfo(vendor="nvidia", backend="cuda", name="NVIDIA H100 PCIe",
+                                        vram_mb=81559, memory_kind="dedicated")])
+    model = setup_advisor.resolve_model("Qwen3.8-27B", hf_catalog.all_models())
+    sel = measured.select(rows, sorted({r["hardware"] for r in rows}), model, box)
+    steps = setup_advisor.one_way_to_start(setup_advisor.setup_steps(model, box, measured=sel.choice))
+    out = shape.setup_payload(SetupResult(model, box, None, steps, sel), "Qwen3.8-27B")
+    assert out["engine"] == "vllm" and out["measured"]["engine"] == "vllm"
+    assert out["measured"]["vllm"] == {"max_model_len": 65536, "max_num_seqs": sel.choice.max_seqs,
+                                       "gpu_memory_utilization": 0.92}
+    assert "vllm-server.service" in out["note"] and "llama.cpp" not in out["note"]
+    assert any("vllm serve" in (st["command"] or "") for st in out["steps"])
+    # the llama.cpp route says so too
+    plain = shape.setup_payload(SetupResult(model, box, None, steps, None), "Qwen3.8-27B")
+    assert plain["engine"] == "llama.cpp" and "measured" not in plain
+    # a box without systemd (RunPod, Vast, WSL) gets no unit step, so the note names none
+    bare = setup_advisor.one_way_to_start(setup_advisor.setup_steps(model, box, measured=sel.choice),
+                                          systemd=False)
+    out = shape.setup_payload(SetupResult(model, box, None, bare, sel), "Qwen3.8-27B")
+    assert out["engine"] == "vllm" and "127.0.0.1:8001" in out["note"]
+    assert "vllm-server.service" not in out["note"]
+
+
 def test_box_payload_shape():
     out = shape.box_payload(hardware.profile_hardware(), check.serving_now())
     assert "backend" in out and "memory_gb" in out and "serving" in out

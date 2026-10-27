@@ -32,6 +32,9 @@ def _isolated_deneb(tmp_path, monkeypatch):
     monkeypatch.setattr(check, "_linger", lambda: None, raising=False)
     # recommend and setup name what serves: nothing, unless the test sets one up
     monkeypatch.setattr(check, "serving_now", lambda: None, raising=False)
+    # setup offers a systemd user service; a CI container has no systemd, tests say when not
+    from deneb import cli
+    monkeypatch.setattr(cli, "_has_systemd", lambda: True, raising=False)
     client.set_brain(None)
     brain.reset()
     yield

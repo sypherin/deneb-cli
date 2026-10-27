@@ -56,14 +56,17 @@ def deneb_setup(model: str, measured: bool = False) -> dict:
     Resolves the model in Deneb's curated catalog, reads the box, and returns the ordered
     tell-only steps (runtime -> download -> run): each step's exact command, what it does, and
     its inline warnings. Deneb shows the commands and RUNS NOTHING - you run each yourself.
+    Works on your own box and on a rented cloud GPU (H100, A100, A10).
 
     Args:
         model: a model name from the catalog (see deneb_recommend for exact names).
-        measured: pick the measured tokenmark.app config Deneb can reproduce here and include
-            its explanation lines. One network call, fail-soft.
+        measured: pick the fastest config measured on tokenmark.app that Deneb can reproduce
+            here. On an x86_64 Nvidia cloud GPU that can be vLLM 0.31 on port 8001 (kept
+            running by the vllm-server.service user unit where the box has systemd), else
+            llama.cpp. One network call, fail-soft.
 
-    Returns a dict with the resolved model, the box, and the ordered `steps`. An unknown model
-    returns {"error": ..., "did_you_mean": <closest name or null>} instead.
+    Returns a dict with the resolved model, the box, `engine` ("llama.cpp" or "vllm") and the
+    ordered `steps`. An unknown model returns {"error": ..., "did_you_mean": ...} instead.
     """
     name = (model or "").strip()
     if not name:

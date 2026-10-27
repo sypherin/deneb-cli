@@ -1,7 +1,8 @@
 # deneb-mcp
 
 A Model Context Protocol (MCP) server that gives an AI agent the same keyless model-setup
-advice the `deneb` CLI gives at the terminal.
+advice the `deneb` CLI gives at the terminal, on your own AI box or a rented cloud GPU
+(H100, A100, A10).
 
 Both faces call one engine, `deneb.api`, so the tools below return the same answer as
 `deneb recommend` and `deneb setup`. There is no second ranking and no side door. Like the CLI
@@ -23,6 +24,9 @@ This server does not touch the hosted Deneb engine or any credentials. The engin
 - `deneb_setup(model, measured=False)`: the ordered, platform-correct setup steps to run a
   catalog model here: each step's command, what it does, and its warnings. Deneb shows the
   commands and runs none of them. An unknown name returns a `did_you_mean` suggestion.
+  `measured=True` builds the steps from TokenMark's fastest measured run for this box. On one
+  x86_64 H100 (SXM or PCIe), A100 40GB or A10 with Qwen3.8-27B that is vLLM 0.31 on port 8001
+  (kept up by `vllm-server.service` where the box has systemd); elsewhere it is llama.cpp. The `engine` field says which.
 - `deneb_box()`: the local hardware profile and what model server is already serving, so an
   agent can orient before asking for a recommendation. Read-only local probes, no external network.
 

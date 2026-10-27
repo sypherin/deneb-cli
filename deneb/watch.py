@@ -696,7 +696,7 @@ def schedule_text(every: str) -> str:
 def unschedule_text() -> str:
     """The undo for `--schedule`: the commands that disable and remove the timer and service
     it told you to create. TELL-ONLY like --schedule: nothing is run or deleted here."""
-    from .setup_advisor import _SERVICE_NAME as unit
+    from .setup_advisor import _SERVICE_NAME as unit, _VLLM_UNIT as vllm_unit
     b, d, z = _C["b"], _C["d"], _C["z"]
     return "\n".join([
         f"\n{b}Stop and remove the deneb watch timer{z}",
@@ -712,7 +712,7 @@ def unschedule_text() -> str:
         f"\n{b}3. Optional: only if you set these up for deneb watch{z}",
         f"{d}   the alert settings file (it holds your webhook URL), and lingering, which kept "
         f"user services running while you were logged out. Turning lingering off would also stop "
-        f"the model server unit that deneb setup creates ({unit}) when you log out, and "
+        f"the model server unit that deneb setup creates ({unit}, or {vllm_unit} on the vLLM route) when you log out, and "
         f"any other user service of yours that relies on it:{z}",
         "rm ~/.config/deneb/watch.env",
         "loginctl disable-linger $USER\n",

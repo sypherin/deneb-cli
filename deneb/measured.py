@@ -3,14 +3,17 @@
 TokenMark (tokenmark.app) lists community and Altronis-run benchmark rows: decode tok/s for a
 model x quant x engine x hardware. `select()` chooses, from those rows, the one a box can
 actually be set up with by Deneb's tell-only steps, and says why when a faster row is out of
-reach. Deneb's setup drives llama.cpp only, so a row is usable when ALL of these hold:
+reach. Deneb's setup drives llama.cpp and vLLM, so a row is usable when ALL of these hold:
 
   - it is for this hardware and this catalog model, single-user (one stream, one GPU);
-  - its engine is llama.cpp, in the build this box gets (CUDA, ROCm, Metal, CPU; or Vulkan on
-    an AMD GPU, which setup can build too);
-  - its quant is one deneb lists for the model (a GGUF it can tell you to download) and fits
-    this box per fit.py;
-  - its decoding mode is one the steps can set: none, or MTP (llama-server --spec-type draft-mtp).
+  - llama.cpp rows: the build this box gets (CUDA, ROCm, Metal, CPU; or Vulkan on an AMD GPU,
+    which setup can build too), a quant deneb lists for the model (a GGUF it can tell you to
+    download) that fits this box per fit.py, and a decoding mode the steps can set: none, or
+    MTP (llama-server --spec-type draft-mtp);
+  - vLLM rows: an x86_64 CUDA box, weights deneb has a vLLM recipe for (vllm_setup.WEIGHTS),
+    room for them on the GPU, and a mode of none or MTP (--speculative-config). The vLLM side
+    also reads the multi-user rows of the same run, to set --max-num-seqs and say what many
+    users at once got.
 
 The row fields used are the ones tracker-summary.json returns: model, quant, backend, variant,
 ctx, mode, concurrency, num_gpus, throughput_kind, decode_tps, hardware, hardwareLabel, url,
@@ -31,6 +34,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from . import fit, setup_advisor, speed
+# TokenMark's row rules, shared with tokenmark.measured_for_model: one definition each
+from .tokenmark import _count, _one_stream, _unrated  # noqa: F401  (_unrated: vllm_setup, coverage)
 
 # The ctx a row was measured at is only worth serving at when it is a real working context: the
 # benchmark tables also hold 512- and 2048-token runs that say nothing about how to serve.
@@ -53,6 +58,7 @@ _BOUND_SLACK_MTP = 6.0
 # the models deneb sets up yet; when there are, split by the chip in hardwareLabel.
 
 _MTP = re.compile(r"mtp(?:-([0-9]+))?", re.ASCII)
+MAX_DRAFT = 16           # mtp-N rows deneb repeats: 1 to 16 draft tokens (TokenMark has 1 to 5)
 # Mode labels that name how the benchmark was run, not a setting a server takes.
 _BENCH_ONLY = re.compile(r"(baseline|depth-\d+|main-\w+|variance-\w+|budget-\w+)")
 # llama.cpp variant labels each playbook's build matches (an empty variant matches any).
@@ -64,10 +70,14 @@ _VARIANTS = {"cuda": {"cuda"}, "rocm": {"rocm", "hip"}, "metal": {"metal"}, "cpu
 class Choice:
     """What the setup steps take from a measured row."""
     row: dict
-    quant: object            # the catalog Quant to download
+    quant: object            # the catalog Quant to download (vllm_setup.Weights for vLLM)
     playbook: str            # which llama.cpp build the steps use: cuda | rocm | vulkan | metal | cpu
-    flags: str = ""          # extra llama-server flags the row implies
+    flags: str = ""          # extra server flags the row implies
     warnings: list = field(default_factory=list)
+    engine: str = "llama.cpp"    # llama.cpp | vllm: which server the steps set up
+    ctx: int = 0                 # vLLM only: --max-model-len
+    max_seqs: int = 0            # vLLM only: --max-num-seqs
+    util: float = 0.0            # vLLM only: --gpu-memory-utilization
 
 
 @dataclass
@@ -96,7 +106,9 @@ def _tps(row) -> float:
 
 
 def _fmt(v: float) -> str:
-    return f"{v:.1f}".rstrip("0").rstrip(".") if v < 100 else f"{v:.0f}"
+    """One decimal, as TokenMark shows it, so the number can be found on its page (103.7 tok/s
+    single-user on an H100); whole numbers from 1000 up (multi-user totals)."""
+    return f"{v:.1f}".rstrip("0").rstrip(".") if v < 1000 else f"{v:.0f}"
 
 
 def _date(row) -> str:
@@ -107,8 +119,8 @@ def describe(row: dict) -> str:
     """'llama.cpp vulkan, UD-Q4_K_XL, ctx 131072, mtp' from a row's own fields."""
     eng = " ".join(x for x in (_s(row.get("backend")), _s(row.get("variant"))) if x) or "engine not named"
     parts = [eng, _s(row.get("quant")) or "quant not named"]
-    if isinstance(row.get("ctx"), int) and not isinstance(row.get("ctx"), bool):
-        parts.append(f"ctx {row['ctx']}")
+    if _count(row.get("ctx")):
+        parts.append(f"ctx {_count(row['ctx'])}")
     if row.get("mode"):
         parts.append(_s(row["mode"], 30))
     return ", ".join(parts)
@@ -142,6 +154,15 @@ def _box_name(profile) -> str:
     return "this hardware"
 
 
+def draft_problem(n) -> str:
+    """Why an mtp-N row's draft count can't be repeated ("" when it can, or names none):
+    mtp-0 is plain decoding under another name, and past MAX_DRAFT it is not a real setting."""
+    if n and not 1 <= int(n) <= MAX_DRAFT:
+        return (f"it names MTP with {int(n)} draft tokens, outside the 1 to {MAX_DRAFT} deneb "
+                "sets, so deneb does not repeat it")
+    return ""
+
+
 def _mode_flags(row, model=None) -> tuple:
     """(flags, problem): the llama-server flags for a row's decoding mode, or why deneb can't.
     MTP flags are emitted only for a model family known to carry the MTP layers in its GGUF;
@@ -155,9 +176,12 @@ def _mode_flags(row, model=None) -> tuple:
             return "", (f"it used MTP decoding, and deneb cannot confirm that "
                         f"{getattr(model, 'name', 'this model')}'s GGUF carries MTP layers, "
                         "so it will not add --spec-type")
+        problem = draft_problem(m.group(1))
+        if problem:
+            return "", problem
         flags = "--spec-type draft-mtp"
         if m.group(1):
-            flags += f" --spec-draft-n-max {m.group(1)}"
+            flags += f" --spec-draft-n-max {int(m.group(1))}"
         return flags, ""
     return "", f"it ran with the '{mode}' decoding mode, which deneb's llama.cpp steps do not set"
 
@@ -181,20 +205,20 @@ def _over_bound(row, model, quant, profile) -> str:
     return ""
 
 
-def _unrated(row) -> bool:
-    """TokenMark rates the row's source credibility 'none': nothing backs the number."""
-    return _s(row.get("credibilityLabel"), 20).lower() == "none"
-
-
-def _classify(row: dict, model, profile) -> tuple:
-    """(Choice, "") when deneb's setup can reproduce this row on this box, else (None, why)."""
+def _classify(row: dict, model, profile, peers=None) -> tuple:
+    """(Choice, "") when deneb's setup can reproduce this row on this box, else (None, why).
+    `peers` (the other rows for this hardware and model) only matter to vLLM rows."""
     backend = _s(row.get("backend")).lower()
     variant = _s(row.get("variant")).lower()
     box = (getattr(profile, "primary_backend", "") or "").strip().lower()
     if not backend:
         return None, "the row does not name its engine"
+    if backend == "vllm":
+        from . import vllm_setup
+        return vllm_setup.classify(row, model, profile, peers)
     if backend != "llama.cpp":
-        return None, f"it ran on {backend}, and deneb's setup only drives llama.cpp"
+        return None, (f"it ran on {backend}, which deneb's setup does not drive "
+                      "(it drives llama.cpp and vLLM)")
     playbook = box if box in ("cuda", "rocm", "metal", "cpu") else "cpu"
     if variant:
         if variant in _VARIANTS[playbook]:
@@ -210,8 +234,8 @@ def _classify(row: dict, model, profile) -> tuple:
     if quant is None:
         return None, (f"its quant ({qname or 'not named'}) is not one deneb lists as a GGUF for "
                       f"{getattr(model, 'name', 'this model')}")
-    if int(row.get("num_gpus") or 1) > 1:
-        return None, f"it used {row['num_gpus']} GPUs"
+    if _count(row.get("num_gpus")) > 1:
+        return None, f"it used {_count(row['num_gpus'])} GPUs"
     try:
         fits = bool(fit.fits(model, quant, profile).fits)
     except Exception:  # noqa: BLE001 - an unreadable box is "does not fit", never a crash
@@ -225,8 +249,7 @@ def _classify(row: dict, model, profile) -> tuple:
     if over:
         return None, over
     warnings = []
-    ctx = row.get("ctx")
-    ctx = ctx if isinstance(ctx, int) and not isinstance(ctx, bool) else 0
+    ctx = _count(row.get("ctx"))
     serve = max(DEFAULT_SERVE_CTX, ctx)
     if serve > ctx and ctx:
         note = (f"the row was timed at a {ctx} token context; it is served at {serve} so the "
@@ -275,13 +298,28 @@ def _candidates(rows, hw_id: str, model) -> tuple:
             if not _tps(r):
                 bad += 1
                 continue
-            if r.get("throughput_kind") != "single-stream" or (r.get("concurrency") or 1) != 1:
+            if not _one_stream(r):
                 continue
         except Exception:  # noqa: BLE001
             bad += 1
             continue
         out.append(r)
     return sorted(out, key=_tps, reverse=True), bad
+
+
+def _peers(rows, hw_id: str, model) -> list:
+    """Every readable row for this hardware and model, multi-user ones included: a vLLM pick
+    reads its run's --max-num-seqs and many-users numbers off them."""
+    key = setup_advisor._norm_key(getattr(model, "name", ""))
+    out = []
+    for r in rows or []:
+        try:
+            if (isinstance(r, dict) and r.get("hardware") == hw_id
+                    and setup_advisor._norm_key(r.get("model")) == key):
+                out.append(r)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 
 def select(rows, tracked, model, profile) -> Selection:
@@ -306,10 +344,11 @@ def select(rows, tracked, model, profile) -> Selection:
         return Selection(None, [f"--measured: {why}. Using the catalog default."]
                          + [f"    ({s_})" for s_ in skipped], hardware_id=hw_id)
     best = rated[0]
+    peers = _peers(rows, hw_id, model)
     chosen, first_why = None, ""
     for r in rated:
         try:
-            c, why = _classify(r, model, profile)
+            c, why = _classify(r, model, profile, peers)
         except Exception:  # noqa: BLE001 - a row we cannot read is skipped, and counted
             bad += 1
             c, why = None, "it could not be read"
@@ -338,6 +377,9 @@ def select(rows, tracked, model, profile) -> Selection:
         lines.append(f"    TokenMark's fastest row is {_fmt(_tps(best))} tok/s ({describe(best)}), "
                      f"but {first_why}. Using the best row deneb can set up: "
                      f"{_fmt(_tps(row))} tok/s.")
+    if chosen.engine == "vllm":
+        from . import vllm_setup
+        lines += vllm_setup.many_users_lines(chosen, peers, model, profile)
     lines += [f"    note: {w}" for w in chosen.warnings]
     if n_unrated:
         lines.append(f"    skipped {n_unrated} row{'s' if n_unrated != 1 else ''} TokenMark rates "

@@ -1,8 +1,9 @@
 # Deneb
 
-Check, set up and watch a local LLM server on your own AI box: AMD Strix Halo (Ryzen AI
-Max+ 395), NVIDIA DGX Spark (GB10), GeForce and workstation GPUs, Radeon, Intel Arc and
-Apple M-series. It works with llama.cpp (`llama-server`), vLLM, Ollama and LM Studio.
+Check, set up and watch an LLM server on your own AI box or a rented cloud GPU: AMD Strix
+Halo (Ryzen AI Max+ 395), NVIDIA DGX Spark (GB10), GeForce and workstation GPUs, Radeon,
+Intel Arc, Apple M-series, and NVIDIA H100, A100 and A10 cloud GPUs. It works with llama.cpp
+(`llama-server`), vLLM, Ollama and LM Studio.
 
 The main commands are free, need no account or token, and send nothing unless you ask for it
 (an alert, a catalog refresh, measured speeds). They read the box and print the exact fix.
@@ -12,6 +13,7 @@ They never run it: you do.
 deneb check                    # is the model served, on the GPU, ready?
 deneb recommend --use coding   # which models fit this box, with estimated tokens/s
 deneb setup Qwen3.6-35B-A3B    # the setup steps for any model deneb catalog lists
+deneb setup Qwen3.8-27B --measured   # on an H100, A100 40GB or A10: vLLM steps from measured runs
 deneb watch --schedule         # keep it healthy: what changed since the last check, with alerts
 ```
 
@@ -156,10 +158,11 @@ deneb stack                              # several models behind one authed endp
 deneb selfupdate [--remote user@host]    # how to update Deneb, here or on another box
 ```
 
-Deneb knows 35 hardware classes: GeForce RTX 30, 40 and 50, RTX PRO 6000, RTX 6000 Ada,
-RTX A6000, L40S, A100 80GB, H100 SXM, H200, B200, MI300X, DGX Spark, Jetson AGX Thor, Strix
-Halo, Radeon RX 7900 XTX and 9070 XT, Intel Arc B580 and Pro B60, and Apple M1 Max, M1 Ultra,
-M2 Max, M2 Ultra, M3 Max, M3 Ultra, M4 Pro and M4 Max. It estimates
+Deneb knows 46 hardware classes: GeForce RTX 30, 40 and 50, RTX PRO 6000, RTX 6000 Ada,
+RTX A6000, the data center and cloud GPUs (H100 SXM, PCIe and NVL, GH200, H200 and H200 NVL,
+B200, A100 40GB and 80GB, A10, A10G, A40, L4, L40, L40S, T4, MI300X), DGX Spark, Jetson AGX
+Thor, Strix Halo, Radeon RX 7900 XTX and 9070 XT, Intel Arc B580 and Pro B60, and Apple M1
+Max, M1 Ultra, M2 Max, M2 Ultra, M3 Max, M3 Ultra, M4 Pro and M4 Max. It estimates
 single-user decode speed from memory bandwidth and the model's active parameters; the test
 suite checks the estimate against measured TokenMark speeds.
 
@@ -175,10 +178,52 @@ When Ollama is already serving, the first step is a route through it instead: an
 pull a GGUF split into several files yet).
 
 With `--measured`, setup reads TokenMark and builds the steps from the fastest measured
-llama.cpp config your box can run (quant, context, MTP flags), and says the speed, the source
-link and where and when it was measured. If TokenMark has no row for your box and model, or
-can't be reached, it says so in one line and uses the default. `deneb check` then compares a
-short live decode against that speed.
+config your box can run (engine, quant, context, MTP flags), and says the speed, the source
+link and where and when it was measured. That is llama.cpp on most boxes, and vLLM on a
+cloud GPU where TokenMark has a faster vLLM run (next section). If TokenMark has no row for
+your box and model, or can't be reached, it says so in one line and uses the default.
+`deneb check` then compares a short live decode against that speed.
+
+## Set up vLLM on a cloud GPU (H100, A100 40GB, A10)
+
+Rent one GPU, SSH in, install Deneb, then:
+
+```sh
+deneb setup Qwen3.8-27B --measured
+```
+
+On an H100 (SXM or PCIe), A100 40GB or A10, TokenMark has vLLM runs of Qwen3.8-27B that beat
+llama.cpp on the same card, so Deneb prints vLLM steps built from the fastest one. You check the Nvidia
+driver, install uv and vLLM 0.31.0 (CUDA 12.9 build) into `~/vllm-venv`, download the INT4
+or FP8 weights from Hugging Face, and write a systemd user service (`vllm-server.service`)
+that serves the model on 127.0.0.1:8001 with the measured context, memory and MTP settings.
+The last step records the measured speed, so `deneb check` can tell you if your server runs
+slower.
+
+| GPU | what Deneb sets up | measured, one user | best llama.cpp run, same GPU |
+|---|---|---|---|
+| H100 SXM | vLLM, INT4, ctx 65536, MTP 4 | 161.8 tok/s | not measured |
+| H100 PCIe | vLLM, INT4, ctx 65536, MTP 4 | 103.7 tok/s | 56.7 tok/s |
+| A100 40GB | vLLM, FP8, ctx 32768, MTP 4 | 81.2 tok/s | 45.5 tok/s |
+| A10 | vLLM, INT4, ctx 32768 | 28.4 tok/s | 24.9 tok/s |
+
+Speeds from [tokenmark.app](https://tokenmark.app), measured 14 and 15 Oct 2026. `--measured`
+reads the live numbers each time it runs.
+
+What this route does not cover yet:
+
+- **One model.** TokenMark has vLLM runs for Qwen3.8-27B only. Other models get llama.cpp steps.
+- **One x86_64 GPU.** Multi-GPU runs are left out, and an Arm box (GH200) gets llama.cpp
+  steps, because the vLLM build TokenMark measured is x86_64 only.
+- **Other cloud cards** (A100 80GB, H100 NVL, H200, B200, L4, L40, L40S, A40, A10G, T4,
+  MI300X) are in the catalog and get llama.cpp steps until TokenMark has vLLM runs for them.
+- **No systemd** in a container (RunPod, Vast): the service steps become a note on keeping
+  the server up with `tmux` or `nohup`.
+
+It prints the commands and runs none of them, the same as every other setup.
+
+Maintainers: `python3 -m deneb.coverage` lists each GPU TokenMark measures and what Deneb
+sets up there, and exits 1 when one is missing from the catalog or has nothing Deneb can set up.
 
 ---
 

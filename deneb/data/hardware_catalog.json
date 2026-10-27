@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated": "2026-10-20",
+ "updated": "2026-10-28",
  "notes": "Decode speed on a single stream is bounded by memory bandwidth: tok/s ~= efficiency x bandwidth_GBps / GB_read_per_token (GB read per token ~= active params x bytes/param). efficiency 0.55-0.75 in practice. Specs are vendor figures; 'confidence' marks entries to re-verify. The landscape job flags hardware seen in the wild that is missing here. 'match' = lowercase substrings of the detected GPU/CPU name that identify the device; 'exclude' = substrings that rule it out (laptop variants have lower bandwidth).",
  "devices": [
   {
@@ -193,6 +193,57 @@
    ]
   },
   {
+   "id": "h100-pcie",
+   "name": "NVIDIA H100 PCIe",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90",
+   "mem_gb": 80,
+   "mem_type": "HBM2e",
+   "bw_gbps": 2000,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/content/dam/en-zz/Solutions/gtcs22/data-center/h100/PB-11133-001_v01.pdf",
+   "confidence": "high",
+   "match": [
+    "h100 pcie"
+   ],
+   "exclude": [
+    "nvl"
+   ],
+   "notes": "Common 1-GPU cloud rental. nvidia-smi names it 'NVIDIA H100 PCIe'."
+  },
+  {
+   "id": "h100-nvl",
+   "name": "NVIDIA H100 NVL",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90",
+   "mem_gb": 94,
+   "mem_type": "HBM3",
+   "bw_gbps": 3900,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/h100/",
+   "confidence": "high",
+   "match": [
+    "h100 nvl"
+   ],
+   "exclude": []
+  },
+  {
    "id": "gh200",
    "name": "NVIDIA GH200 Grace Hopper (96 GB HBM3)",
    "vendor": "nvidia",
@@ -245,6 +296,32 @@
    ]
   },
   {
+   "id": "h200-nvl",
+   "name": "NVIDIA H200 NVL",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Hopper sm_90",
+   "mem_gb": 141,
+   "mem_type": "HBM3e",
+   "bw_gbps": 4800,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/h200/",
+   "confidence": "high",
+   "match": [
+    "h200 nvl"
+   ],
+   "exclude": [
+    "gh200"
+   ],
+   "notes": "Same 141 GB and 4.8 TB/s as the SXM part; lower power, air-cooled PCIe card."
+  },
+  {
    "id": "b200",
    "name": "NVIDIA B200",
    "vendor": "nvidia",
@@ -266,7 +343,9 @@
    "match": [
     "b200"
    ],
-   "exclude": []
+   "exclude": [
+    "gb200"
+   ]
   },
   {
    "id": "strix-halo-395",
@@ -756,6 +835,60 @@
    "exclude": []
   },
   {
+   "id": "l40",
+   "name": "NVIDIA L40",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ada sm_89",
+   "mem_gb": 48,
+   "mem_type": "GDDR6 ECC",
+   "bw_gbps": 864,
+   "fp4": false,
+   "fp8": true,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/l40/",
+   "confidence": "high",
+   "match": [
+    "nvidia l40"
+   ],
+   "exclude": [
+    "l40s"
+   ],
+   "notes": "The L40S's sibling: same 48 GB and 864 GB/s. nvidia-smi names it 'NVIDIA L40'."
+  },
+  {
+   "id": "a100-40gb",
+   "name": "NVIDIA A100 40GB",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ampere sm_80",
+   "mem_gb": 40,
+   "mem_type": "HBM2",
+   "bw_gbps": 1555,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "sglang",
+    "tensorrt-llm"
+   ],
+   "source": "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet.pdf",
+   "confidence": "high",
+   "match": [
+    "a100 sxm4 40gb",
+    "a100 pcie 40gb",
+    "a100 40gb"
+   ],
+   "exclude": [],
+   "notes": "PCIe and SXM4 40GB parts are both 1555 GB/s. Common 1-GPU cloud rental (Lambda gpu_1x_a100_sxm4)."
+  },
+  {
    "id": "a100-80gb",
    "name": "NVIDIA A100 80GB",
    "vendor": "nvidia",
@@ -775,7 +908,8 @@
    "confidence": "high",
    "match": [
     "a100 80gb",
-    "a100 sxm4 80gb"
+    "a100 sxm4 80gb",
+    "a100 pcie 80gb"
    ],
    "exclude": [],
    "notes": "PCIe 1935 GB/s; the SXM part reaches 2039 GB/s."
@@ -977,6 +1111,31 @@
    ],
    "exclude": [],
    "notes": "AWS-only part (EC2 G5). AWS states 24 GB per GPU; the 600 GB/s is a third-party figure (getdeploying.com), not an NVIDIA or AWS datasheet."
+  },
+  {
+   "id": "a40",
+   "name": "NVIDIA A40",
+   "vendor": "nvidia",
+   "class": "datacenter-gpu",
+   "arch": "Ampere sm_86",
+   "mem_gb": 48,
+   "mem_type": "GDDR6 ECC",
+   "bw_gbps": 696,
+   "fp4": false,
+   "fp8": false,
+   "engines": [
+    "vllm",
+    "llama.cpp",
+    "sglang",
+    "ollama"
+   ],
+   "source": "https://www.nvidia.com/en-us/data-center/a40/",
+   "confidence": "high",
+   "match": [
+    "nvidia a40"
+   ],
+   "exclude": [],
+   "notes": "nvidia-smi names it 'NVIDIA A40'."
   },
   {
    "id": "l4",

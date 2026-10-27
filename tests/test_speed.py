@@ -80,6 +80,30 @@ def test_match_real_tool_names():
     assert speed.match_device([], DEVICES) is None
 
 
+def test_match_cloud_gpu_nvidia_smi_names():
+    """The names nvidia-smi prints on rented cloud GPUs, each to its own catalog card."""
+    m = lambda n: (speed.match_device([n], DEVICES) or {}).get("id")
+    assert m("NVIDIA H100 80GB HBM3") == "h100-sxm"
+    assert m("NVIDIA H100 PCIe") == "h100-pcie"
+    assert m("NVIDIA H100 NVL") == "h100-nvl"
+    assert m("NVIDIA GH200 480GB") == "gh200"
+    assert m("NVIDIA H200") == "h200"
+    assert m("NVIDIA H200 NVL") == "h200-nvl"
+    assert m("NVIDIA B200") == "b200"
+    assert m("NVIDIA GB200") is None                          # Grace Blackwell, not a B200 card
+    assert m("NVIDIA A100-SXM4-40GB") == "a100-40gb"
+    assert m("NVIDIA A100-PCIE-40GB") == "a100-40gb"
+    assert m("NVIDIA A100 80GB PCIe") == "a100-80gb"
+    assert m("NVIDIA A100-PCIE-80GB") == "a100-80gb"
+    assert m("NVIDIA A10") == "a10"
+    assert m("NVIDIA A10G") == "a10g"
+    assert m("NVIDIA A40") == "a40"
+    assert m("NVIDIA L4") == "l4"
+    assert m("NVIDIA L40") == "l40"
+    assert m("NVIDIA L40S") == "l40s"
+    assert m("Tesla T4") == "t4"
+
+
 def test_device_for_profile_uses_gpu_then_cpu():
     p = HardwareProfile(cpu_model="AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
                         gpus=[GPUInfo(vendor="amd", name="AMD Radeon 8060S Graphics",
